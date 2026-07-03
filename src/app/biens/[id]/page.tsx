@@ -193,6 +193,12 @@ export default function BienPage({ params }: { params: { id: string } }) {
             <div className="ds-row__sub">
               {STATUT_LABELS[c.statut] ?? c.statut} · {c.nb_documents} document{c.nb_documents > 1 ? "s" : ""}
               {c.score?.ratio != null ? ` · revenus ${c.score.ratio} fois le coût du logement` : ""}
+              {c.score?.eliminatoire ? (
+                <span style={{ color: "#b3261e", fontWeight: 600 }}>
+                  {" · éliminé sur : "}
+                  {c.score.criteres.filter((cr) => cr.eliminatoire).map((cr) => cr.label.toLowerCase()).join(", ")}
+                </span>
+              ) : ""}
             </div>
           </div>
           <div className="ds-row__actions">

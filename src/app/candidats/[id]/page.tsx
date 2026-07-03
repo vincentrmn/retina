@@ -320,7 +320,11 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
               </div>
               {cand.score.eliminatoire && (
                 <div className="ds-error" style={{ marginBottom: 12 }}>
-                  Un critère éliminatoire a été déclenché : le score est plafonné à 40 sur 100. Le détail figure ci-dessous.
+                  {(() => {
+                    const raisons = cand.score.criteres.filter((c) => c.eliminatoire).map((c) => c.label.toLowerCase());
+                    const pluriel = raisons.length > 1;
+                    return `Ce candidat est éliminé sur le${pluriel ? "s" : ""} critère${pluriel ? "s" : ""} suivant${pluriel ? "s" : ""} : ${raisons.join(", ")}. Le score est donc plafonné à 40 sur 100, quel que soit le reste du dossier.`;
+                  })()}
                 </div>
               )}
               <div className="score-list">
