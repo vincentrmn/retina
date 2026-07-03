@@ -4,6 +4,25 @@ import { useRouter } from "next/navigation";
 import Toggle from "./Toggle";
 import { DEFAULT_CRITERES, type Criteres } from "@/lib/types";
 
+/**
+ * Puce cliquable « Éliminatoire » : rouge quand le critère est éliminatoire,
+ * contour gris sinon. C'est le toggle qui décide du caractère éliminatoire.
+ */
+function ElimToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      className={`elim-toggle${on ? " elim-toggle--on" : ""}`}
+      aria-pressed={on}
+      onClick={() => onChange(!on)}
+      title={on ? "Critère éliminatoire — cliquez pour le rendre seulement pénalisant" : "Cliquez pour rendre ce critère éliminatoire"}
+    >
+      <span className="elim-toggle__dot" />
+      Éliminatoire
+    </button>
+  );
+}
+
 /** Formulaire bien + critères d'éligibilité — création et édition. */
 export default function BienForm({ bienId }: { bienId?: number }) {
   const router = useRouter();
@@ -75,38 +94,62 @@ export default function BienForm({ bienId }: { bienId?: number }) {
 
       <div className="ds-section"><span className="ds-h2">Critères d&apos;éligibilité</span><span className="ds-rule" /></div>
       <div className="ds-card"><div className="ds-card__body">
-        <div className="ds-grid">
-          <div className="ds-field">
-            <span className="ds-label">Revenus nets exigés (× loyer + charges)</span>
-            <input className="ds-input" type="number" step="0.5" value={criteres.ratioMin} onChange={(e) => setC("ratioMin", Number(e.target.value))} />
+        <div className="crit-list">
+          <div className="crit-row">
+            <div className="crit-main">
+              <p className="crit-text">
+                <span className="crit-name">Revenus/coût du logement</span> : les revenus nets du ménage doivent atteindre au moins
+                <input className="ds-input crit-inline" type="number" step="0.5" value={criteres.ratioMin} onChange={(e) => setC("ratioMin", Number(e.target.value))} />
+                fois le loyer et les charges.
+              </p>
+            </div>
+            <div className="crit-ctrl"><ElimToggle on={criteres.ratioEliminatoire} onChange={(v) => setC("ratioEliminatoire", v)} /></div>
           </div>
-          <div className="ds-field">
-            <span className="ds-label">Ancienneté minimale (mois, 0 = aucune)</span>
-            <input className="ds-input" type="number" value={criteres.ancienneteMinMois} onChange={(e) => setC("ancienneteMinMois", Number(e.target.value))} />
+
+          <div className="crit-row">
+            <div className="crit-main">
+              <p className="crit-text">
+                <span className="crit-name">Présence d&apos;un CDI</span> : le ménage doit compter au moins un contrat à durée indéterminée.
+              </p>
+            </div>
+            <div className="crit-ctrl"><ElimToggle on={criteres.cdiRequis} onChange={(v) => setC("cdiRequis", v)} /></div>
+          </div>
+
+          <div className="crit-row">
+            <div className="crit-main">
+              <p className="crit-text">
+                <span className="crit-name">CDD acceptés</span> : compter les CDD comme un revenu stable. Sinon, ils sont fortement pénalisés dans la note.
+              </p>
+            </div>
+            <div className="crit-ctrl">
+              <Toggle checked={criteres.cddAccepte} onChange={(v) => setC("cddAccepte", v)} />
+            </div>
+          </div>
+
+          <div className="crit-row">
+            <div className="crit-main">
+              <p className="crit-text">
+                <span className="crit-name">Période d&apos;essai</span> : écarter le dossier lorsque tout le ménage est en période d&apos;essai en cours.
+              </p>
+            </div>
+            <div className="crit-ctrl"><ElimToggle on={criteres.essaiEliminatoire} onChange={(v) => setC("essaiEliminatoire", v)} /></div>
+          </div>
+
+          <div className="crit-row">
+            <div className="crit-main">
+              <p className="crit-text">
+                <span className="crit-name">Ancienneté dans l&apos;entreprise</span> : exiger au moins
+                <input className="ds-input crit-inline" type="number" value={criteres.ancienneteMinMois} onChange={(e) => setC("ancienneteMinMois", Number(e.target.value))} />
+                mois d&apos;ancienneté (0 = aucune exigence).
+              </p>
+            </div>
           </div>
         </div>
 
-        <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
-          <div className="zone-picker__toggle-row" style={{ borderBottom: "none", padding: 0, margin: 0 }}>
-            <Toggle checked={criteres.ratioEliminatoire} onChange={(v) => setC("ratioEliminatoire", v)} />
-            <span className="zone-picker__toggle-label">Ratio insuffisant = éliminatoire</span>
-          </div>
-          <div className="zone-picker__toggle-row" style={{ borderBottom: "none", padding: 0, margin: 0 }}>
-            <Toggle checked={criteres.cdiRequis} onChange={(v) => setC("cdiRequis", v)} />
-            <span className="zone-picker__toggle-label">Au moins un CDI exigé dans le ménage</span>
-          </div>
-          <div className="zone-picker__toggle-row" style={{ borderBottom: "none", padding: 0, margin: 0 }}>
-            <Toggle checked={criteres.cddAccepte} onChange={(v) => setC("cddAccepte", v)} />
-            <span className="zone-picker__toggle-label">CDD acceptés (sinon fortement pénalisés)</span>
-          </div>
-          <div className="zone-picker__toggle-row" style={{ borderBottom: "none", padding: 0, margin: 0 }}>
-            <Toggle checked={criteres.essaiEliminatoire} onChange={(v) => setC("essaiEliminatoire", v)} />
-            <span className="zone-picker__toggle-label">Période d&apos;essai en cours = éliminatoire (si tout le ménage est en essai)</span>
-          </div>
-        </div>
         <p className="ds-hint">
-          Un critère éliminatoire plafonne le score à 40 sur 100 et marque le dossier en rouge. Les autres critères
-          pèsent dans le barème sans exclure automatiquement le candidat.
+          La puce <strong>Éliminatoire</strong> en rouge marque un critère qui, s&apos;il n&apos;est pas respecté, plafonne le
+          score à 40 sur 100 et affiche le dossier en rouge. Cliquez dessus pour activer ou désactiver ce caractère
+          éliminatoire. Les critères sans puce rouge pèsent dans la note sans écarter automatiquement le candidat.
         </p>
       </div></div>
 
@@ -120,7 +163,7 @@ export default function BienForm({ bienId }: { bienId?: number }) {
         </p>
         <ul className="ds-bullets">
           <li>
-            <strong>Revenus / coût du logement (40 points).</strong> On compare les revenus nets du ménage au montant
+            <strong>Revenus/coût du logement (40 points).</strong> On compare les revenus nets du ménage au montant
             du loyer et des charges. Le maximum est atteint dès que les revenus atteignent le ratio exigé ci-dessus
             (par exemple 3 fois le loyer). En dessous, les points diminuent proportionnellement.
           </li>

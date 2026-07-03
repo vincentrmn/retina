@@ -95,7 +95,7 @@ function DropZone({ candidatId, onDone }: { candidatId: number; onDone: () => vo
             <span className="ds-muted">
               Fiches de paie, contrats, pièces d&apos;identité en vrac, pour une personne comme pour un couple.
               PDF ou photos, 15 Mo maximum par fichier. Vous n&apos;avez rien à trier : au moment de l&apos;analyse,
-              Retina reconnaît seul le type de chaque document et la personne concernée.
+              RETINA reconnaît seul le type de chaque document et la personne concernée.
             </span>
             <span className="ds-btn ds-btn--secondary ds-btn--sm">Choisir des fichiers</span>
           </>
@@ -132,6 +132,7 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
   const [cand, setCand] = useState<CandidatDetail | null>(null);
   const [err, setErr] = useState("");
   const [analysing, setAnalysing] = useState(false);
+  const [cohBusy, setCohBusy] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     const c = await fetch(`/api/candidats/${id}`).then((x) => x.json());
@@ -174,6 +175,24 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
       body: JSON.stringify({ id: d.id, personne }),
     });
     load();
+  }
+
+  /** Valider (ou ré-activer) une incohérence à la main : la note est recalculée. */
+  async function toggleCoherence(i: number, ignored: boolean) {
+    setCohBusy(i);
+    try {
+      const res = await fetch(`/api/candidats/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ignoreCoherence: i, ignored }),
+      });
+      const data = await res.json();
+      if (res.ok && data.score) {
+        setCand((prev) => (prev ? { ...prev, coherence: data.coherence, score: data.score } : prev));
+      }
+    } finally {
+      setCohBusy(null);
+    }
   }
 
   if (err && !cand) return <div className="wrap ds-scope"><div className="ds-error">{err}</div></div>;
@@ -315,7 +334,7 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
                 </div>
                 <div className="ds-stat"><span className="ds-stat__k">Revenus nets ménage</span><span className="ds-stat__v ds-num">{cand.score.revenusMenage ? eur(cand.score.revenusMenage) : "-"}</span></div>
                 <div className="ds-stat" style={ratioBas ? { background: "#fbeaea", borderColor: "#e7c3c3" } : undefined}>
-                  <span className="ds-stat__k">Ratio revenus / coût</span>
+                  <span className="ds-stat__k">Ratio revenus/coût</span>
                   <span className="ds-stat__v ds-num" style={ratioBas ? { color: "#b3261e" } : undefined}>{cand.score.ratio != null ? `${cand.score.ratio}×` : "-"}</span>
                 </div>
                 <div className="ds-stat"><span className="ds-stat__k">Coût mensuel</span><span className="ds-stat__v ds-num">{eur(Number(cand.loyer) + Number(cand.charges))}</span></div>
@@ -386,14 +405,49 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
           <div className="ds-section"><span className="ds-h2">Contrôles de cohérence</span><span className="ds-rule" /></div>
           <div className="ds-card"><div className="ds-card__body">
             <div className="score-list">
-              {cand.coherence.map((c, i) => (
-                <div className="score-row" key={i}>
-                  <span className="score-row__label" style={{ display: "inline-flex", alignItems: "center", gap: 8, color: c.ok ? undefined : "#b3261e" }}>
-                    <span className={`ds-dot${c.ok ? "" : " ds-dot--warn"}`} /> Personne {c.personne} · {c.check}
-                  </span>
-                  <span className="score-row__detail" style={c.ok ? undefined : { color: "#b3261e" }}>{c.detail}</span>
-                </div>
-              ))}
+              {cand.coherence.map((c, i) => {
+                const probleme = !c.ok && !c.ignored; // incohérence active (pénalise)
+                const valide = !c.ok && c.ignored; // incohérence validée à la main
+                return (
+                  <div className="score-row" key={i}>
+                    <span
+                      className="score-row__label"
+                      style={{ display: "inline-flex", alignItems: "center", gap: 8, color: probleme ? "#b3261e" : undefined }}
+                    >
+                      <span className={`ds-dot${probleme ? " ds-dot--warn" : ""}`} /> Personne {c.personne} · {c.check}
+                    </span>
+                    <span className="score-row__note" style={{ fontWeight: 400 }}>
+                      {probleme && (
+                        <button
+                          className="ds-btn ds-btn--ghost ds-btn--sm"
+                          onClick={() => toggleCoherence(i, true)}
+                          disabled={cohBusy === i}
+                          title="Marquer cette incohérence comme vérifiée : elle n'affectera plus la note"
+                        >
+                          {cohBusy === i ? "…" : "Marquer OK"}
+                        </button>
+                      )}
+                      {valide && (
+                        <button
+                          className="ds-btn ds-btn--ghost ds-btn--sm"
+                          onClick={() => toggleCoherence(i, false)}
+                          disabled={cohBusy === i}
+                          title="Ré-activer cette incohérence (elle repénalisera la note)"
+                        >
+                          {cohBusy === i ? "…" : "Rétablir"}
+                        </button>
+                      )}
+                    </span>
+                    <span
+                      className="score-row__detail"
+                      style={probleme ? { color: "#b3261e" } : valide ? { color: "#07875f" } : undefined}
+                    >
+                      {c.detail}
+                      {valide && " Validé à la main : cette incohérence n'affecte pas la note."}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div></div>
         </>

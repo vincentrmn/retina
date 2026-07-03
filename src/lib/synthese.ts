@@ -108,6 +108,13 @@ export function buildSynthese(docs: DocumentMeta[], now = new Date()): SyntheseP
       aVerifier,
     };
 
+    // Nom de repli : sans pièce d'identité, on prend le nom porté par le contrat
+    // ou les bulletins (marqué « à vérifier » car pas issu d'un document officiel).
+    const nomRepli =
+      (contrat ? val(contrat.nom_complet) : null) ??
+      paies.map((f) => val(f.nom_complet)).find((v) => v) ??
+      null;
+
     out.push({
       personne: p,
       identite: identite
@@ -117,12 +124,19 @@ export function buildSynthese(docs: DocumentMeta[], now = new Date()): SyntheseP
             date_naissance: val(identite.date_naissance),
             aVerifier: douteux(identite.nom) || douteux(identite.prenom) || douteux(identite.date_naissance),
           }
+        : nomRepli
+        ? { nom: nomRepli, prenom: null, date_naissance: null, aVerifier: true }
         : null,
       emploi,
     });
   }
 
   return out;
+}
+
+/** Montant lisible « 2.000 € » pour les phrases de cohérence. */
+function money(n: number): string {
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") + " €";
 }
 
 export function buildCoherence(docs: DocumentMeta[], now = new Date()): CoherenceCheck[] {
@@ -141,11 +155,11 @@ export function buildCoherence(docs: DocumentMeta[], now = new Date()): Coherenc
       if (same != null) {
         checks.push({
           personne: p,
-          check: "Nom : identité et fiche de paie",
+          check: "Le nom est le même sur la pièce d'identité et les fiches de paie",
           ok: same,
           detail: same
-            ? `« ${paieNom} » correspond à la pièce d'identité`
-            : `Le bulletin est au nom de « ${paieNom} », la pièce d'identité indique « ${idFull} »`,
+            ? `Le nom « ${paieNom} » qui figure sur les fiches de paie correspond bien à celui de la pièce d'identité.`
+            : `Les fiches de paie sont au nom de « ${paieNom} », alors que la pièce d'identité indique « ${idFull} ». À vérifier.`,
         });
       }
     }
@@ -158,9 +172,11 @@ export function buildCoherence(docs: DocumentMeta[], now = new Date()): Coherenc
       if (same != null) {
         checks.push({
           personne: p,
-          check: "Employeur : contrat et bulletins",
+          check: "L'employeur est le même sur le contrat et les fiches de paie",
           ok: same,
-          detail: same ? `« ${empP} » sur les deux documents` : `Contrat : « ${empC} » / bulletins : « ${empP} »`,
+          detail: same
+            ? `L'employeur « ${empP} » est identique sur le contrat de travail et sur les fiches de paie.`
+            : `Le contrat de travail indique l'employeur « ${empC} », alors que les fiches de paie mentionnent « ${empP} ». À vérifier.`,
         });
       }
     }
@@ -175,11 +191,14 @@ export function buildCoherence(docs: DocumentMeta[], now = new Date()): Coherenc
       if (sc != null && ref.length) {
         const avg = ref.reduce((a, b) => a + b, 0) / ref.length;
         const ok = Math.abs(sc - avg) / Math.max(sc, avg) <= 0.15;
+        const nature = brut ? "brut" : "net";
         checks.push({
           personne: p,
-          check: "Salaire : contrat et bulletins",
+          check: "Le salaire du contrat correspond aux fiches de paie",
           ok,
-          detail: `Contrat : ${Math.round(sc)} € ${brut ? "brut" : "net"} / bulletins : ${Math.round(avg)} € en moyenne`,
+          detail: ok
+            ? `Le salaire prévu au contrat (${money(sc)} ${nature}) est cohérent avec la moyenne des fiches de paie (${money(avg)}).`
+            : `Le salaire prévu au contrat (${money(sc)} ${nature}) s'écarte de plus de 15 % de la moyenne des fiches de paie (${money(avg)}). À vérifier.`,
         });
       }
     }
@@ -202,11 +221,17 @@ export function buildCoherence(docs: DocumentMeta[], now = new Date()): Coherenc
           if ((cy - py) * 12 + (cm - pm) !== 1) consecutifs = false;
         }
         const ok = recent && (periods.length < 2 || consecutifs);
+        const liste = periods.join(", ");
+        const soucis: string[] = [];
+        if (!recent) soucis.push(`la fiche de paie la plus récente (${last}) date de plus de 3 mois`);
+        if (!consecutifs) soucis.push("les mois fournis ne se suivent pas");
         checks.push({
           personne: p,
-          check: "Bulletins consécutifs et récents",
+          check: "Les fiches de paie sont récentes et se suivent",
           ok,
-          detail: `${periods.join(", ")}${recent ? "" : ` (dernier bulletin vieux de ${ageMois} mois)`}${consecutifs ? "" : " (périodes non consécutives)"}`,
+          detail: ok
+            ? `Fiches de paie fournies : ${liste}. Elles sont récentes et se suivent mois par mois.`
+            : `Fiches de paie fournies : ${liste}. Attention : ${soucis.join(" et ")}.`,
         });
       }
     }

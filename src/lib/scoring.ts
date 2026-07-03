@@ -96,7 +96,7 @@ export function scoreCandidat(
   }
   criteresOut.push({
     key: "ratio",
-    label: "Ratio revenus / coût du logement",
+    label: "Ratio revenus/coût du logement",
     points: ratioPts,
     max: 40,
     detail:
@@ -151,7 +151,9 @@ export function scoreCandidat(
   });
 
   // --- 4. Cohérence du dossier (15 pts) --------------------------------------
-  const ko = coherence.filter((c) => !c.ok);
+  // Une incohérence validée à la main par l'agent (ignored) ne pénalise plus.
+  const ko = coherence.filter((c) => !c.ok && !c.ignored);
+  const valides = coherence.filter((c) => !c.ok && c.ignored).length;
   const cohPts = Math.max(0, 15 - ko.length * 5);
   criteresOut.push({
     key: "coherence",
@@ -160,8 +162,8 @@ export function scoreCandidat(
     max: 15,
     detail: coherence.length
       ? ko.length
-        ? `${ko.length} contrôle${ko.length > 1 ? "s" : ""} croisé${ko.length > 1 ? "s" : ""} en échec : ${ko.map((c) => c.check.toLowerCase()).join(", ")}. Chaque incohérence retire 5 points.`
-        : `Les ${coherence.length} contrôles croisés effectués sont cohérents (noms, employeurs, salaires et dates concordent).`
+        ? `${ko.length} incohérence${ko.length > 1 ? "s" : ""} détectée${ko.length > 1 ? "s" : ""} dans le dossier ; chacune retire 5 points.${valides ? ` (${valides} autre${valides > 1 ? "s" : ""} incohérence${valides > 1 ? "s" : ""} validée${valides > 1 ? "s" : ""} à la main, sans effet sur la note.)` : ""}`
+        : `Les ${coherence.length} contrôles croisés sont cohérents (noms, employeurs, salaires et dates concordent).${valides ? ` ${valides} incohérence${valides > 1 ? "s" : ""} a été validée à la main.` : ""}`
       : "Le dossier ne contient pas assez de documents pour croiser les informations.",
     eliminatoire: false,
   });

@@ -931,3 +931,20 @@ a.ds-row { text-decoration: none; color: inherit; }
 
 /* En-têtes de carte : nettement en gras pour bien ressortir. */
 .ds-card__head { font-weight: 700; }
+
+/* Critères d'éligibilité (formulaire bien) : nom en gras : explication, contrôle à droite. */
+.crit-list { display: grid; gap: 2px; }
+.crit-row { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 14px 0; border-bottom: 1px solid var(--ds-line); }
+.crit-row:last-child { border-bottom: 0; }
+.crit-main { flex: 1; min-width: 0; }
+.crit-text { margin: 0; line-height: 1.55; font-size: var(--ds-fs-sm); }
+.crit-name { font-weight: 700; }
+.crit-ctrl { flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
+.crit-inline { display: inline-block; width: 62px; height: auto; padding: 3px 8px; margin: 0 3px; text-align: center; font-variant-numeric: tabular-nums; }
+/* Puce/toggle « éliminatoire » : rouge si actif, contour gris sinon. */
+.elim-toggle { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--ds-line-2, var(--ds-line)); background: #fff; color: var(--ds-ink-soft); border-radius: var(--ds-r-pill); padding: 6px 13px; font-size: var(--ds-fs-xs); font-weight: 700; cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s, color .12s; }
+.elim-toggle:hover { border-color: #e7c3c3; }
+.elim-toggle__dot { width: 9px; height: 9px; border-radius: 50%; border: 2px solid currentColor; box-sizing: border-box; }
+.elim-toggle--on { background: #fbeaea; border-color: #e7c3c3; color: #b3261e; }
+.elim-toggle--on .elim-toggle__dot { background: #b3261e; }
+@media (max-width: 640px) { .crit-row { flex-direction: column; align-items: flex-start; gap: 10px; } }

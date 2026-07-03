@@ -158,6 +158,8 @@ export type CoherenceCheck = {
   check: string;
   ok: boolean;
   detail: string;
+  /** Incohérence validée à la main par l'agent : n'affecte plus la note. */
+  ignored?: boolean;
 };
 
 // ---------------------------------------------------------------------------

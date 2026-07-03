@@ -2,7 +2,7 @@ import "./globals.css";
 import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
-  title: "Retina",
+  title: "RETINA",
   description: "Analyse de candidats à la location (BBI)",
 };
 

@@ -61,7 +61,8 @@ const S = (v: any): string => {
     const dec = ch.normalize("NFKD").replace(/[̀-ͯ]/g, "");
     for (const d of dec) { const c = d.codePointAt(0)!; if (inWinAnsi(c)) out += d; }
   }
-  return out.replace(/ {2,}/g, " ");
+  // Pas d'espace avant/après un « / », puis on écrase les espaces multiples.
+  return out.replace(/ *\/ */g, "/").replace(/ {2,}/g, " ");
 };
 const CONTRAT: Record<string, string> = { CDI: "CDI", CDD: "CDD", interim: "Intérim", independant: "Indépendant", autre: "Autre" };
 const dateFr = (iso: string | null | undefined) => {
