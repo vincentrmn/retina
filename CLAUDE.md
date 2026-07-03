@@ -304,6 +304,76 @@ logo Brouwers) —, Postgres via `pg` + `ensureSchema()` idempotent, mêmes conv
   explication de la méthode + paliers dans le formulaire du bien.
 - **Favicon** : `src/app/icon.svg`, motif d'œil (rétine) dans le vert BBI.
 
+### Retours Vincent (03/07/2026, session fiabilisation UI + export PDF)
+
+Gros lot de polish + corrections, tout livré et déployé (prod testée à chaque fois).
+
+- **Export PDF fiabilisé (le morceau clé)** : le PDF sortait des lignes cassées / caractères
+  parasites (`!`, espacement des lettres déréglé). **Cause racine trouvée en générant puis en
+  RASTERISANT le PDF** (jsPDF en Node + `pdf.js`, cf. §Méthode de test) : la police Helvetica de
+  jsPDF n'encode que **WinAnsi (CP1252)**. Détail complet dans les Pièges ci-dessous. `S()` dans
+  `exportBien.ts` réécrit → ne laisse QUE du WinAnsi atteindre le PDF, appliqué globalement via un
+  **override de `doc.text`** (couvre aussi les cellules autotable) + sur les champs libres des
+  tableaux (mesure de largeur). Plus d'espace autour des `/`.
+- **Incohérences validables à la main** : bouton « Marquer OK » sur chaque incohérence →
+  `CoherenceCheck.ignored`, le scoring ne pénalise plus (`!c.ok && !c.ignored`), recalcul depuis la
+  synthèse stockée (`PATCH /api/candidats/[id]` avec `ignoreCoherence`, **zéro coût API**). Le PDF
+  affiche alors « OK » vert + « validé à la main », plus le rouge.
+- **Contrôles de cohérence réécrits en français clair** (phrases complètes, fini le style
+  télégraphique `Contrat : « X » / bulletins : « Y »`).
+- **Nom de repli** (`buildSynthese`) : sans pièce d'identité, on prend le nom porté par le contrat
+  ou les fiches de paie (marqué « à vérifier »), au lieu de n'afficher aucun nom.
+- **Critères d'éligibilité repensés** (`BienForm`) : chaque critère a un **interrupteur « activer »**
+  + une **puce « Éliminatoire »** (toggle rouge). Nouveaux champs `Criteres` (`ratioActif`,
+  `cdiActif`/`cdiEliminatoire`, `essaiActif`, `ancienneteActif`) + **`normalizeCriteres()`** pour la
+  compat ascendante des biens existants (ancien `cdiRequis` = actif+éliminatoire, etc.). Un critère
+  désactivé = grisé, ignoré au calcul (ratio désactivé ⇒ 40/40, pas d'exigence de revenus).
+  `normalizeCriteres` appliqué à la persistance (POST/PATCH biens) et au scoring.
+- **« Comment le score est-il calculé ? »** en **tableau à hauteur de ligne constante** (Critère /
+  Points / Comment) au lieu d'une liste à puces.
+- **Topbar** : grille `auto 1fr auto` (au lieu de `1fr auto 1fr` qui écrasait la colonne des boutons
+  et les cassait en escalier) → les boutons tiennent sur une ligne, le titre tronque proprement.
+- **Divers** : RETINA en majuscule partout (dont `<title>`) ; suppression du paragraphe « Le
+  principe » de l'accueil ; carte de cohérence et carte de complétude passées en layout `.score-row`
+  empilé (libellé au-dessus, phrase dessous) — plus de tassement sur mobile ; puces `.ds-bullets`
+  centrées sur la 1ʳᵉ ligne via `calc(0.75em - 3.5px)`.
+
+### Pièges durables (valables aussi pour SCOUT & VESPER — même stack, même `globals.css`, même jsPDF)
+
+1. **jsPDF + police standard = WinAnsi (CP1252) UNIQUEMENT.** Un caractère hors de ce jeu ne rate
+   pas qu'un glyphe : **il dérègle l'espacement de TOUTE la ligne**. Les textes produits par le
+   modèle (français) en contiennent, **invisibles dans le navigateur** donc jamais soupçonnés :
+   **espace fine insécable `U+202F`** et **espace fine `U+2009`** (avant `€ % : ;` et dans « 3 900 »),
+   **trait d'union insécable `U+2011`** (dates « 2026‑02 »), **flèches `→`** (rendue « !' »), `≥ ≈`.
+   ⇒ Tout texte qui part dans un PDF jsPDF doit passer par un assainisseur qui **ne laisse que du
+   WinAnsi** (garder accents, `« » € œ` ; remplacer espaces exotiques → espace, tirets → `-`,
+   flèches/maths → ASCII ; translittérer/retirer le reste). L'appliquer **globalement via un override
+   de `doc.text`** (sinon on en oublie, et autotable dessine ses cellules avec `doc.text` aussi).
+   Voir `S()` dans `exportBien.ts` — réutilisable tel quel.
+2. **Spécificité CSS : `globals.css` a une règle générique `input[type="number"] { width: 100% }`
+   (sélecteur d'attribut, 0,1,1) qui BAT une simple classe (0,1,0).** Un petit champ inline stylé par
+   une classe restait donc en pleine largeur (coupait la phrase, désalignait tout). ⇒ pour surcharger,
+   monter en spécificité (`input.crit-num`, 0,1,1, défini plus bas). Vaut pour tout champ qu'on veut
+   dimensionner autrement que par défaut.
+3. **Layout robuste = grille alignée**, pas des champs qui flottent dans un flex. Pour une rangée
+   « [contrôle] texte [contrôle] », utiliser `display:grid; grid-template-columns: auto 1fr auto;
+   align-items:center` → tout s'aligne quelle que soit la longueur du texte.
+
+### Méthode de test (à réutiliser partout)
+
+- **Ne jamais « deviner » un rendu visuel.** Rendre le vrai markup + le VRAI `globals.css` avec
+  Playwright/Chromium (desktop **et** 390 px), puis regarder la capture. ⚠️ **Ne pas reconstruire une
+  maquette CSS à la main** : elle peut « marcher » à tort en omettant la règle générique qui casse
+  tout en prod (leçon vécue avec le champ `input[type=number]`). Copier `globals.css` tel quel.
+- **PDF : le générer ET le rasteriser pour le VOIR.** jsPDF tourne aussi en Node (bundler `esbuild`,
+  stub du chargement du logo, capter `doc.save` via `output('arraybuffer')`), puis rendre les pages
+  avec `pdfjs-dist` dans Chromium et screenshoter. C'est ce qui a permis d'isoler le bug WinAnsi
+  caractère par caractère au lieu de tâtonner.
+- **Piloter Railway en GraphQL direct** (`backboard.railway.com`, `Authorization: Bearer <token
+  workspace>`) : lister le projet pour récupérer les IDs env/service, puis **poller le déploiement
+  jusqu'à `SUCCESS`** et vérifier le `commitHash` déployé + un `GET /` en 200. Le token n'est pas
+  stocké (le redemander à Vincent).
+
 **Reste à faire** :
 1. **Calibration élargie** (autres dossiers réels du Drive) + validation du barème avec Shawna.
 2. Barème/poids à valider avec Shawna (valeurs actuelles = barème indicatif du §Étage 2).
@@ -316,3 +386,15 @@ logo Brouwers) —, Postgres via `pg` + `ensureSchema()` idempotent, mêmes conv
 - Aucun score ni champ ne doit être produit par le modèle en texte libre :
   extraction = structured outputs, score = code.
 - Ne jamais committer de documents réels de candidats ni de clé API.
+- **`npm run build` passe avant tout commit.** Commit clair en français, puis push branche + `main`
+  (Railway auto-déploie), puis **poller le déploiement jusqu'à `SUCCESS`** avant de rendre la main.
+- **Vérifier les rendus, ne pas deviner** : captures Playwright sur le vrai `globals.css` (desktop +
+  mobile) pour l'UI, génération + rastérisation pour le PDF (cf. §Méthode de test). Les bugs
+  d'affichage remontés par Vincent venaient tous de suppositions non vérifiées.
+- **Critères d'un bien** : le modèle de données a évolué (interrupteur `actif` + `éliminatoire` par
+  critère). Toujours passer par **`normalizeCriteres()`** en lecture/persistance/scoring ; la
+  description « §Scoring » plus haut (`cdiRequis`, etc.) est l'ancien modèle, conservé pour l'histoire
+  mais **remappé** par `normalizeCriteres`.
+- Ces pièges (WinAnsi jsPDF, spécificité CSS, grille d'alignement, méthode de test, pilotage Railway
+  GraphQL) sont **transférables à SCOUT et VESPER** : même stack, même `globals.css`, même export
+  jsPDF. Les y appliquer quand on y touche.
