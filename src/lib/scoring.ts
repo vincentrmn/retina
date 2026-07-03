@@ -50,14 +50,20 @@ function anciennetePts(mois: number | null): number {
   return 3;
 }
 
-/** Moyenne pondérée par le salaire (à défaut, moyenne simple). */
+/**
+ * Moyenne pondérée par le salaire. Uniquement quand TOUS les salaires sont
+ * connus : sinon une personne sans bulletin (salaire inconnu) aurait un poids
+ * nul et son contrat disparaîtrait du score — moyenne simple dans ce cas.
+ */
 function pondere(personnes: SynthesePersonne[], f: (p: SynthesePersonne) => number): number {
   const actifs = personnes.filter((p) => p.emploi);
   if (!actifs.length) return 0;
-  const salaires = actifs.map((p) => p.emploi!.salaire_net_mensuel ?? 0);
-  const total = salaires.reduce((a, b) => a + b, 0);
-  if (total <= 0) return actifs.reduce((a, p) => a + f(p), 0) / actifs.length;
-  return actifs.reduce((a, p, i) => a + f(p) * (salaires[i] / total), 0);
+  const salaires = actifs.map((p) => p.emploi!.salaire_net_mensuel);
+  if (salaires.some((s) => s == null || s <= 0)) {
+    return actifs.reduce((a, p) => a + f(p), 0) / actifs.length;
+  }
+  const total = (salaires as number[]).reduce((a, b) => a + b, 0);
+  return actifs.reduce((a, p, i) => a + f(p) * ((salaires[i] as number) / total), 0);
 }
 
 export function scoreCandidat(

@@ -56,7 +56,8 @@ export type Champ<T = string> = {
   confiance: Confiance;
 };
 
-export type ExtractionPaie = {
+/** Un bulletin individuel — un PDF scanné contient souvent plusieurs mois. */
+export type BulletinPaie = {
   nom_complet: Champ;
   employeur: Champ;
   /** Période du bulletin, format YYYY-MM. */
@@ -65,6 +66,10 @@ export type ExtractionPaie = {
   salaire_brut_mensuel: Champ<number>;
   intitule_poste: Champ;
   date_entree: Champ; // YYYY-MM-DD
+};
+
+export type ExtractionPaie = {
+  bulletins: BulletinPaie[];
   remarques: string | null;
 };
 

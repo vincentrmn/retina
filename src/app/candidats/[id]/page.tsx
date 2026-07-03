@@ -75,11 +75,11 @@ function UploadZone({ candidatId, personne, onDone }: { candidatId: number; pers
         <input
           ref={fileRef}
           type="file"
+          className="upload-file"
           accept="application/pdf,image/jpeg,image/png,image/webp"
           multiple
           disabled={busy}
           onChange={(e) => upload(e.target.files)}
-          style={{ flex: 1, minWidth: 160, fontSize: "0.85rem" }}
         />
         {busy && <span className="ds-spinner" />}
       </div>
@@ -157,7 +157,7 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
       </div>
       {err && <div className="ds-error" style={{ marginBottom: 12 }}>{err}</div>}
 
-      <div className="ds-grid">
+      <div className="ds-grid ds-grid--cards">
         {personnes.map((p) => (
           <div className="ds-card" key={p}>
             <div className="ds-card__head">Personne {p}{p === "B" ? " (laisser vide si candidat seul)" : ""}</div>
@@ -176,6 +176,13 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
                   </span>
                 </div>
               ))}
+              {docsDe(p)
+                .filter((d) => (d.extraction as any)?.remarques)
+                .map((d) => (
+                  <p className="ds-hint" key={`rq-${d.id}`}>
+                    <strong>{DOC_TYPE_LABELS[d.type]}</strong> — {(d.extraction as any).remarques}
+                  </p>
+                ))}
               {docsDe(p).some((d) => d.extraction_status === "error") && (
                 <p className="ds-hint" style={{ color: "#b3261e" }}>
                   {docsDe(p).filter((d) => d.extraction_status === "error").map((d) => `${d.filename} : ${d.extraction_error}`).join(" · ")}
@@ -234,7 +241,7 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
       {cand.synthese && cand.synthese.length > 0 && (
         <>
           <div className="ds-section"><span className="ds-h2">Fiche signalétique</span><span className="ds-rule" /></div>
-          <div className="ds-grid">
+          <div className="ds-grid ds-grid--cards">
             {personnes.map((p) => {
               const s = syntheseDe(p);
               if (!s) return null;

@@ -845,3 +845,13 @@ a.ds-row { text-decoration: none; color: inherit; }
 .ds-photo { flex: 0 0 auto; width: 96px; height: 70px; border-radius: var(--ds-r-md); border: 1px solid var(--ds-line); object-fit: cover; cursor: pointer; transition: border-color .12s, transform .06s; }
 .ds-photo:hover { border-color: var(--ds-accent); }
 .ds-photo:active { transform: translateY(1px); }
+
+/* ── RETINA — ajouts spécifiques (cartes personnes, upload mobile) ───────── */
+/* Cartes A/B : pleine largeur sur mobile, 2 colonnes dès que la place existe. */
+.ds-grid--cards { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+/* L'input fichier natif a une largeur intrinsèque qui déborde sur mobile. */
+.upload-file { flex: 1 1 160px; min-width: 0; max-width: 100%; font-size: 0.85rem; }
+@media (max-width: 640px) {
+  .ds-kv { flex-wrap: wrap; }
+  .ds-kv__v { text-align: left; }
+}

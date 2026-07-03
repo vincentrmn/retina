@@ -1,4 +1,5 @@
 import type {
+  BulletinPaie,
   Champ,
   CoherenceCheck,
   DocumentMeta,
@@ -48,7 +49,8 @@ function monthsBetween(fromISO: string, to: Date): number | null {
 }
 
 type DocsByType = {
-  paies: ExtractionPaie[];
+  /** Bulletins individuels, aplatis (un PDF scanné contient souvent plusieurs mois). */
+  paies: BulletinPaie[];
   contrat: ExtractionContrat | null;
   identite: ExtractionIdentite | null;
 };
@@ -56,7 +58,9 @@ type DocsByType = {
 function groupDocs(docs: DocumentMeta[], p: Personne): DocsByType {
   const mine = docs.filter((d) => d.personne === p && d.extraction_status === "done" && d.extraction);
   return {
-    paies: mine.filter((d) => d.type === "fiche_paie").map((d) => d.extraction as ExtractionPaie),
+    paies: mine
+      .filter((d) => d.type === "fiche_paie")
+      .flatMap((d) => (d.extraction as ExtractionPaie).bulletins ?? []),
     contrat: (mine.find((d) => d.type === "contrat")?.extraction as ExtractionContrat) ?? null,
     identite: (mine.find((d) => d.type === "piece_identite")?.extraction as ExtractionIdentite) ?? null,
   };

@@ -40,14 +40,28 @@ function objet(properties: Record<string, Json>): Json {
   };
 }
 
+const BULLETIN = {
+  type: "object",
+  description: "Un bulletin de salaire (un mois)",
+  properties: {
+    nom_complet: champ("string", "Nom complet du salarié tel qu'imprimé sur le bulletin"),
+    employeur: champ("string", "Nom de l'employeur / raison sociale"),
+    periode: champ("string", "Période du bulletin au format YYYY-MM"),
+    salaire_net_mensuel: champ("number", "Salaire NET mensuel en euros (net à payer avant impôt si distinction, sinon net à payer)"),
+    salaire_brut_mensuel: champ("number", "Salaire BRUT mensuel en euros"),
+    intitule_poste: champ("string", "Intitulé du poste / fonction si présent"),
+    date_entree: champ("string", "Date d'entrée / d'ancienneté dans l'entreprise au format YYYY-MM-DD (souvent en en-tête du bulletin)"),
+  },
+  required: ["nom_complet", "employeur", "periode", "salaire_net_mensuel", "salaire_brut_mensuel", "intitule_poste", "date_entree"],
+  additionalProperties: false,
+};
+
 export const SCHEMA_PAIE = objet({
-  nom_complet: champ("string", "Nom complet du salarié tel qu'imprimé sur le bulletin"),
-  employeur: champ("string", "Nom de l'employeur / raison sociale"),
-  periode: champ("string", "Période du bulletin au format YYYY-MM"),
-  salaire_net_mensuel: champ("number", "Salaire NET mensuel en euros (net à payer avant impôt si distinction, sinon net à payer)"),
-  salaire_brut_mensuel: champ("number", "Salaire BRUT mensuel en euros"),
-  intitule_poste: champ("string", "Intitulé du poste / fonction si présent"),
-  date_entree: champ("string", "Date d'entrée / d'ancienneté dans l'entreprise au format YYYY-MM-DD (souvent en en-tête du bulletin)"),
+  bulletins: {
+    type: "array",
+    description: "Un élément PAR bulletin présent dans le document (un scan contient souvent plusieurs mois)",
+    items: BULLETIN,
+  },
 });
 
 export const SCHEMA_CONTRAT = objet({
@@ -80,11 +94,12 @@ export const SCHEMAS: Record<DocType, Json> = {
 
 export const PROMPTS: Record<DocType, string> = {
   fiche_paie:
-    "Ce document est une fiche de paie (bulletin de salaire), possiblement un scan de qualité variable. " +
-    "Extrais les informations demandées. Règles strictes : n'invente JAMAIS une valeur — si un champ est absent, " +
-    "illisible ou douteux, mets value=null ou baisse la confiance. Les montants sont en euros ; convertis les " +
-    "formats locaux (1.234,56 ou 1 234,56 → 1234.56). Si le bulletin couvre une période non mensuelle, ramène " +
-    "les salaires au mensuel et signale-le en remarques.",
+    "Ce document contient une ou plusieurs fiches de paie (bulletins de salaire), possiblement des scans de " +
+    "qualité variable. Produis un élément de `bulletins` PAR bulletin/mois présent dans le document. Règles " +
+    "strictes : n'invente JAMAIS une valeur — si un champ est absent, illisible ou douteux, mets value=null ou " +
+    "baisse la confiance. Les montants sont en euros ; convertis les formats locaux (1.234,56 ou 1 234,56 → " +
+    "1234.56). Si un bulletin couvre une période non mensuelle, ramène les salaires au mensuel et signale-le en " +
+    "remarques.",
   contrat:
     "Ce document est un contrat de travail (possiblement plusieurs pages, scan de qualité variable). " +
     "Extrais les informations demandées. Règles strictes : n'invente JAMAIS une valeur — si un champ est absent " +

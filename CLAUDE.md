@@ -226,11 +226,29 @@ logo Brouwers) —, Postgres via `pg` + `ensureSchema()` idempotent, mêmes conv
   pour tout ré-extraire), `documents` (upload multipart 15 Mo max, PDF/JPEG/PNG/WebP),
   `documents/[id]/file` (sert le scan).
 
+### Session POC (03/07/2026) — testé sur documents réels
+
+- **Multi-bulletins** : un PDF scanné contient souvent plusieurs mois (cas réel « fiche de
+  salaire nico 04-05-06 ») → `SCHEMA_PAIE` retourne un **tableau `bulletins`**, la synthèse
+  aplatit. Ne pas revenir à un bulletin par document.
+- **Extraction validée sur vrais scans** (bulletins LUXFUEL, contrat CGI, passeport tunisien) :
+  montants exacts, nuances captées (CDI signé sans date de début — liée à l'autorisation de
+  travail —, essai 6 mois non calculable, nom d'épouse « HAMDI EP KARAA »). Les **`remarques`**
+  du modèle sont précieuses → affichées dans la carte Documents.
+- **Fix scoring** : la pondération par salaire ne s'applique que si TOUS les salaires sont
+  connus (sinon une personne sans bulletin avait un poids nul et son contrat disparaissait
+  du score) — moyenne simple à défaut.
+- **Responsive mobile vérifié** (Playwright 390 px, zéro overflow) : ajouts CSS `.ds-grid--cards`
+  (cartes A/B empilées) et `.upload-file` en fin de `globals.css`, section « RETINA — ajouts ».
+- Flux complet testé end-to-end en local (Postgres 16 local) : bien → candidat → upload 3
+  vrais PDF → analyse 19 s → score 55/100 cohérent (bulletins 2024 signalés trop vieux).
+
 **Reste à faire** :
-1. **Déploiement Railway** (projet + Postgres + `DATABASE_URL`, `ANTHROPIC_API_KEY`,
-   `PGSSL=require`) — calquer `docs/DEPLOY.md` de Vesper.
-2. **Calibration sur 2–3 dossiers réels anonymisés** (qualité d'extraction Opus sur vrais
-   scans + validation du barème avec Shawna) avant mise en main.
+1. **Déploiement Railway** : projet `charming-vibrancy` créé par Vincent (service repo retina
+   + Postgres). À poser sur le service : `DATABASE_URL = ${{Postgres.DATABASE_URL}}`,
+   `ANTHROPIC_API_KEY` (clé dédiée au projet, doc « Clé API » du Drive), `PGSSL = require` ;
+   générer le domaine public. Déploie `main` à chaque push.
+2. **Calibration élargie** (autres dossiers réels du Drive) + validation du barème avec Shawna.
 3. **Export PDF par bien** (étape 5 du plan) — non commencé.
 4. Barème/poids à valider avec Shawna (valeurs actuelles = barème indicatif du §Étage 2).
 
