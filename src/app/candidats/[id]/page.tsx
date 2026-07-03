@@ -272,16 +272,18 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
                 <div className="ds-card" key={p}>
                   <div className="ds-card__head">Personne {p}{nomDe(p) ? ` · ${nomDe(p)}` : ""}</div>
                   <div className="ds-card__body">
-                    {items.map((c, i) => (
-                      <div className="ds-kv" key={i}>
-                        <span className="ds-kv__k" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                          <span className={COMPLETUDE_DOT[c.statut]} /> {c.label}
-                        </span>
-                        <span className="ds-kv__v" style={c.statut === "ok" ? undefined : { color: c.statut === "manquant" ? "#b3261e" : "#9a6700" }}>
-                          {c.detail}
-                        </span>
-                      </div>
-                    ))}
+                    <div className="score-list">
+                      {items.map((c, i) => (
+                        <div className="score-row" key={i}>
+                          <span className="score-row__label" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+                            <span className={COMPLETUDE_DOT[c.statut]} /> {c.label}
+                          </span>
+                          <span className="score-row__detail" style={{ marginTop: 0, ...(c.statut === "ok" ? {} : { color: c.statut === "manquant" ? "#b3261e" : "#9a6700" }) }}>
+                            {c.detail}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               );

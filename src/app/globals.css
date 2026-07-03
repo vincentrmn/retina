@@ -893,7 +893,9 @@ a.ds-row { text-decoration: none; color: inherit; }
 /* Listes à puces vertes (critères, intro) */
 .ds-bullets { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
 .ds-bullets li { position: relative; padding-left: 20px; font-size: var(--ds-fs-sm); line-height: 1.5; color: var(--ds-ink); }
-.ds-bullets li::before { content: ""; position: absolute; left: 4px; top: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--ds-accent); }
+/* Puce centrée sur la 1ʳᵉ ligne quelle que soit la taille de police
+   (line-height 1.5 → centre de la ligne à 0.75em ; on retire la moitié de la puce). */
+.ds-bullets li::before { content: ""; position: absolute; left: 4px; top: calc(0.75em - 3.5px); width: 7px; height: 7px; border-radius: 50%; background: var(--ds-accent); }
 
 /* Carte d'introduction (accueil) */
 .intro-card .ds-card__body { display: grid; gap: 12px; }
@@ -917,11 +919,11 @@ a.ds-row { text-decoration: none; color: inherit; }
 
 /* Détail du score : notes alignées dans une colonne fixe, explication en dessous. */
 .score-list { display: grid; gap: 2px; }
-.score-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 14px; padding: 9px 0; border-bottom: 1px solid var(--ds-line); }
+.score-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: start; padding: 11px 0; border-bottom: 1px solid var(--ds-line); }
 .score-row:last-child { border-bottom: 0; }
-.score-row__label { font-weight: 600; font-size: var(--ds-fs-sm); }
-.score-row__note { font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; font-size: var(--ds-fs-sm); }
-.score-row__detail { grid-column: 1 / -1; color: var(--ds-ink-soft); font-size: var(--ds-fs-sm); line-height: 1.5; }
+.score-row__label { font-weight: 600; font-size: var(--ds-fs-sm); line-height: 1.4; }
+.score-row__note { font-weight: 800; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: var(--ds-fs-sm); }
+.score-row__detail { grid-column: 1 / -1; margin-top: 2px; color: var(--ds-ink-soft); font-size: var(--ds-fs-sm); line-height: 1.5; }
 
 /* Champ de saisie toujours blanc (un fond gris paraît désactivé), spécificité renforcée. */
 .wrap .ds-input, .wrap .ds-select { background: #fff; }
