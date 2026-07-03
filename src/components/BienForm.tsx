@@ -105,9 +105,40 @@ export default function BienForm({ bienId }: { bienId?: number }) {
           </div>
         </div>
         <p className="ds-hint">
-          Un critère éliminatoire plafonne le score à 40/100 et marque le dossier en rouge. Les autres critères pèsent
-          dans le barème sans exclure.
+          Un critère éliminatoire plafonne le score à 40 sur 100 et marque le dossier en rouge. Les autres critères
+          pèsent dans le barème sans exclure automatiquement le candidat.
         </p>
+      </div></div>
+
+      {/* Explication de la méthode de calcul */}
+      <div className="ds-section"><span className="ds-h2">Comment le score est calculé</span><span className="ds-rule" /></div>
+      <div className="ds-card"><div className="ds-card__body">
+        <p style={{ margin: "0 0 12px", lineHeight: 1.55 }}>
+          Le score va de 0 à 100 points et se répartit sur quatre critères. L&apos;intelligence artificielle se
+          contente de lire les documents ; le score, lui, est calculé par un code déterministe, donc un même dossier
+          donne toujours le même résultat.
+        </p>
+        <ul className="ds-bullets">
+          <li>
+            <strong>Revenus / coût du logement (40 points).</strong> On compare les revenus nets du ménage au montant
+            du loyer et des charges. Le maximum est atteint dès que les revenus atteignent le ratio exigé ci-dessus
+            (par exemple 3 fois le loyer). En dessous, les points diminuent proportionnellement.
+          </li>
+          <li>
+            <strong>Stabilité des contrats (30 points).</strong> Un CDI hors période d&apos;essai vaut le maximum, un
+            CDI en période d&apos;essai un peu moins, puis viennent le CDD et l&apos;intérim. Le résultat est pondéré
+            par le poids salarial de chaque personne du ménage.
+          </li>
+          <li>
+            <strong>Ancienneté dans l&apos;entreprise (15 points).</strong> Les points augmentent par paliers : moins
+            de 6 mois, 6 mois, 1 an, 2 ans, puis 3 ans et plus pour le maximum.
+          </li>
+          <li>
+            <strong>Cohérence du dossier (15 points).</strong> Quatre contrôles croisés vérifient que les documents
+            concordent (nom sur la paie et sur la pièce d&apos;identité, employeur du contrat et des bulletins, salaire
+            du contrat proche des bulletins, bulletins consécutifs et récents). Chaque incohérence retire 5 points.
+          </li>
+        </ul>
       </div></div>
 
       {err && <div className="ds-error">{err}</div>}

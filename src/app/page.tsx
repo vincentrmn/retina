@@ -44,7 +44,42 @@ export default function Dashboard() {
         <div className="topbar-nav" />
       </div>
 
-      <div className="ds-section" style={{ marginTop: 0 }}>
+      {/* Introduction : ce qu'est Retina et comment ça marche */}
+      <div className="ds-card intro-card" style={{ marginTop: 0 }}>
+        <div className="ds-card__head">Bienvenue sur Retina</div>
+        <div className="ds-card__body">
+          <p style={{ margin: 0, lineHeight: 1.55 }}>
+            Retina analyse les dossiers des candidats à la location. Pour chaque bien, vous déposez les documents
+            d&apos;un candidat (fiches de paie, contrat de travail, pièce d&apos;identité), et l&apos;outil en extrait
+            automatiquement les informations financières, vérifie leur cohérence, puis calcule un score
+            d&apos;éligibilité expliqué critère par critère.
+          </p>
+          <div className="intro-steps">
+            <div className="intro-step">
+              <span className="intro-step__n">1</span>
+              <div className="intro-step__t">Encodez le bien</div>
+              <div className="intro-step__d">Adresse, loyer, charges et critères d&apos;éligibilité (ratio de revenus exigé, exigences de contrat).</div>
+            </div>
+            <div className="intro-step">
+              <span className="intro-step__n">2</span>
+              <div className="intro-step__t">Déposez les documents</div>
+              <div className="intro-step__d">Tous les documents d&apos;un candidat en une fois. Retina reconnaît seul le type de chaque document et la personne concernée.</div>
+            </div>
+            <div className="intro-step">
+              <span className="intro-step__n">3</span>
+              <div className="intro-step__t">Lisez le score</div>
+              <div className="intro-step__d">Fiche signalétique par personne, contrôles de cohérence, score détaillé, et export PDF de l&apos;analyse du bien.</div>
+            </div>
+          </div>
+          <p className="ds-hint" style={{ margin: 0 }}>
+            Le principe : l&apos;intelligence artificielle se contente de lire les documents, tout le calcul du score
+            est réalisé par un code déterministe. Un même dossier donne donc toujours le même score, et chaque point
+            est justifié.
+          </p>
+        </div>
+      </div>
+
+      <div className="ds-section">
         <span className="ds-h2">Biens à la location</span>
         <span className="ds-rule" />
         <button className="ds-btn ds-btn--primary" onClick={() => router.push("/biens/new")}>

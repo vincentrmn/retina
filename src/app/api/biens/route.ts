@@ -10,7 +10,7 @@ export async function GET() {
     const { rows } = await pool.query(`
       SELECT b.*,
              COUNT(c.id)::int AS nb_candidats,
-             COUNT(c.id) FILTER (WHERE c.statut = 'analyse')::int AS nb_analyses
+             COUNT(c.id) FILTER (WHERE c.score IS NOT NULL)::int AS nb_analyses
         FROM biens b
         LEFT JOIN candidats c ON c.bien_id = b.id
        GROUP BY b.id

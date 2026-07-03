@@ -877,3 +877,40 @@ a.ds-row { text-decoration: none; color: inherit; }
 .dropzone:hover, .dropzone[data-over] { border-color: var(--ds-accent); background: var(--ds-accent-soft, #e3f7f0); }
 .doc-row { align-items: center; }
 .doc-row .ds-btn--sm { flex-shrink: 0; }
+
+/* Champs en fond blanc : un champ gris paraît désactivé et on hésite à cliquer
+   pour écrire. Seul le bouton reste grisé tant que le champ est vide. */
+.ds-input, .ds-select { background: #fff; }
+
+/* Listes à puces vertes (critères, intro) */
+.ds-bullets { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.ds-bullets li { position: relative; padding-left: 20px; font-size: var(--ds-fs-sm); line-height: 1.5; color: var(--ds-ink); }
+.ds-bullets li::before { content: ""; position: absolute; left: 4px; top: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--ds-accent); }
+
+/* Carte d'introduction (accueil) */
+.intro-card .ds-card__body { display: grid; gap: 12px; }
+.intro-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.intro-step { border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); padding: 12px 14px; background: var(--ds-bg-subtle); }
+.intro-step__n { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--ds-accent); color: #fff; font-weight: 700; font-size: 0.8rem; margin-bottom: 6px; }
+.intro-step__t { font-weight: 700; font-size: var(--ds-fs-sm); margin-bottom: 3px; }
+.intro-step__d { font-size: var(--ds-fs-sm); color: var(--ds-ink-soft); line-height: 1.45; }
+
+/* Badge personne A/B sur les documents : clairement cliquable pour réattribuer. */
+.doc-person {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; padding: 0 6px; border-radius: var(--ds-r-sm);
+  font-weight: 700; font-size: var(--ds-fs-xs); cursor: pointer;
+  background: var(--ds-accent-soft); color: var(--ds-accent-ink);
+  border: 1px solid color-mix(in srgb, var(--ds-accent) 30%, transparent);
+}
+.doc-person:hover { background: var(--ds-accent); color: #fff; }
+.doc-person--auto { background: var(--ds-bg-subtle); color: var(--ds-ink-soft); border-color: var(--ds-line); cursor: default; }
+.doc-person--auto:hover { background: var(--ds-bg-subtle); color: var(--ds-ink-soft); }
+
+/* Détail du score : notes alignées dans une colonne fixe, explication en dessous. */
+.score-list { display: grid; gap: 2px; }
+.score-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 14px; padding: 9px 0; border-bottom: 1px solid var(--ds-line); }
+.score-row:last-child { border-bottom: 0; }
+.score-row__label { font-weight: 600; font-size: var(--ds-fs-sm); }
+.score-row__note { font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; font-size: var(--ds-fs-sm); }
+.score-row__detail { grid-column: 1 / -1; color: var(--ds-ink-soft); font-size: var(--ds-fs-sm); line-height: 1.5; }

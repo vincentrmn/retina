@@ -21,6 +21,7 @@ type CandidatDetail = {
   error?: string;
 };
 
+/** Ligne clé / valeur d'une fiche : valeur absente affichée « - » pour garder les mêmes lignes A et B. */
 function Kv({ k, v, warn }: { k: string; v: React.ReactNode; warn?: boolean }) {
   return (
     <div className="ds-kv">
@@ -31,7 +32,7 @@ function Kv({ k, v, warn }: { k: string; v: React.ReactNode; warn?: boolean }) {
 }
 
 function DocStatus({ d }: { d: DocumentMeta }) {
-  if (d.extraction_status === "done") return <span className="ds-dot" title="Extrait" />;
+  if (d.extraction_status === "done") return <span className="ds-dot" title="Document analysé" />;
   if (d.extraction_status === "error")
     return <span className="ds-dot ds-dot--warn" title={d.extraction_error ?? "Erreur d'extraction"} />;
   return <span className="ds-dot ds-dot--low" title="En attente d'analyse" />;
@@ -90,10 +91,11 @@ function DropZone({ candidatId, onDone }: { candidatId: number; onDone: () => vo
           <span className="ds-muted">Envoi en cours… <span className="ds-spinner" /></span>
         ) : (
           <>
-            <strong>Dépose ici tous les documents du dossier</strong>
+            <strong>Déposez ici tous les documents du dossier</strong>
             <span className="ds-muted">
-              Bulletins, contrats, pièces d&apos;identité en vrac. PDF ou photos, 15 Mo max par fichier.
-              L&apos;analyse détecte le type de chaque document et la personne concernée.
+              Fiches de paie, contrats, pièces d&apos;identité en vrac, pour une personne comme pour un couple.
+              PDF ou photos, 15 Mo maximum par fichier. Vous n&apos;avez rien à trier : au moment de l&apos;analyse,
+              Retina reconnaît seul le type de chaque document et la personne concernée.
             </span>
             <span className="ds-btn ds-btn--secondary ds-btn--sm">Choisir des fichiers</span>
           </>
@@ -115,8 +117,8 @@ function DropZone({ candidatId, onDone }: { candidatId: number; onDone: () => vo
 
 const TYPE_LABEL: Record<string, string> = {
   ...DOC_TYPE_LABELS,
-  auto: "Type à déterminer",
-  autre: "Non reconnu",
+  auto: "Type reconnu à l'analyse",
+  autre: "Document non reconnu",
 };
 
 const COMPLETUDE_DOT: Record<CompletudeItem["statut"], string> = {
@@ -181,6 +183,7 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
   const nbDocs = cand.documents.length;
   const dejaExtraits = cand.documents.filter((d) => d.extraction_status === "done").length;
   const aAnalyser = cand.documents.some((d) => d.extraction_status !== "done");
+  const analyseFaite = !!cand.score;
   const syntheseDe = (p: Personne) => cand.synthese?.find((s) => s.personne === p) ?? null;
   const nomDe = (p: Personne) => {
     const s = syntheseDe(p);
@@ -188,6 +191,8 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
       ? [s.identite.prenom, s.identite.nom].filter(Boolean).join(" ")
       : null;
   };
+  const ratioCritere = cand.score?.criteres.find((c) => c.key === "ratio");
+  const ratioBas = !!ratioCritere && ratioCritere.points < ratioCritere.max;
 
   return (
     <div className="wrap ds-scope ds-scope--lg">
@@ -210,32 +215,46 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
       {err && <div className="ds-error" style={{ marginBottom: 12 }}>{err}</div>}
 
       <div className="ds-card"><div className="ds-card__body">
-        {cand.documents.length === 0 && <p className="ds-muted" style={{ margin: 0 }}>Aucun document pour l&apos;instant.</p>}
-        {cand.documents.map((d) => (
-          <div className="ds-kv doc-row" key={d.id}>
-            <span className="ds-kv__k" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <DocStatus d={d} />
-              <button
-                className="ds-btn ds-btn--ghost ds-btn--sm"
-                title={d.personne === "?" ? "Personne à déterminer (l'analyse s'en charge) : cliquer pour forcer" : "Basculer entre personne A et B"}
-                onClick={() => changerPersonne(d)}
-              >{d.personne}</button>
-              {TYPE_LABEL[d.type] ?? d.type}
-            </span>
-            <span className="ds-kv__v" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <a href={`/api/documents/${d.id}/file`} target="_blank" rel="noreferrer" title={d.filename}>
-                {d.filename.length > 30 ? d.filename.slice(0, 28) + "…" : d.filename}
-              </a>
-              <button className="ds-btn ds-btn--danger ds-btn--sm" title="Supprimer" onClick={() => supprimerDoc(d.id)}>✕</button>
-            </span>
-          </div>
-        ))}
+        {cand.documents.length === 0 && <p className="ds-muted" style={{ margin: 0 }}>Aucun document déposé pour l&apos;instant.</p>}
+        {cand.documents.length > 0 && (
+          <p className="ds-hint" style={{ marginTop: 0 }}>
+            Le type de chaque document et la personne concernée (A ou B) sont déterminés automatiquement lors de
+            l&apos;analyse. Une fois l&apos;analyse faite, si un document a été attribué à la mauvaise personne,
+            cliquez sur son badge <strong>A</strong> ou <strong>B</strong> pour le corriger.
+          </p>
+        )}
+        {cand.documents.map((d) => {
+          const attribuee = d.personne === "A" || d.personne === "B";
+          return (
+            <div className="ds-kv doc-row" key={d.id}>
+              <span className="ds-kv__k" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <DocStatus d={d} />
+                {attribuee ? (
+                  <button
+                    className="doc-person"
+                    title="Cliquez pour attribuer ce document à l'autre personne"
+                    onClick={() => changerPersonne(d)}
+                  >{d.personne}</button>
+                ) : (
+                  <span className="doc-person doc-person--auto" title="La personne sera déterminée à l'analyse">?</span>
+                )}
+                {TYPE_LABEL[d.type] ?? d.type}
+              </span>
+              <span className="ds-kv__v" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <a href={`/api/documents/${d.id}/file`} target="_blank" rel="noreferrer" title={d.filename}>
+                  {d.filename.length > 30 ? d.filename.slice(0, 28) + "…" : d.filename}
+                </a>
+                <button className="ds-btn ds-btn--danger ds-btn--sm" title="Supprimer" onClick={() => supprimerDoc(d.id)}>✕</button>
+              </span>
+            </div>
+          );
+        })}
         {cand.documents.filter((d) => d.extraction_status === "error").map((d) => (
           <p className="ds-hint" key={`err-${d.id}`} style={{ color: "#b3261e" }}>{d.filename} : {d.extraction_error}</p>
         ))}
         {cand.documents.filter((d) => (d.extraction as any)?.remarques).map((d) => (
           <p className="ds-hint" key={`rq-${d.id}`}>
-            <strong>{TYPE_LABEL[d.type]} ({d.personne})</strong> : {(d.extraction as any).remarques}
+            <strong>{TYPE_LABEL[d.type]} (personne {d.personne})</strong> : {(d.extraction as any).remarques}
           </p>
         ))}
         <DropZone candidatId={cand.id} onDone={load} />
@@ -292,26 +311,29 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
                     {cand.score.total}/100{cand.score.eliminatoire ? " ⚠" : ""}
                   </span>
                 </div>
-                <div className="ds-stat"><span className="ds-stat__k">Revenus nets ménage</span><span className="ds-stat__v ds-num">{cand.score.revenusMenage ? eur(cand.score.revenusMenage) : "·"}</span></div>
-                <div className="ds-stat"><span className="ds-stat__k">Ratio revenus / coût</span><span className="ds-stat__v ds-num">{cand.score.ratio != null ? `${cand.score.ratio}×` : "·"}</span></div>
+                <div className="ds-stat"><span className="ds-stat__k">Revenus nets ménage</span><span className="ds-stat__v ds-num">{cand.score.revenusMenage ? eur(cand.score.revenusMenage) : "-"}</span></div>
+                <div className="ds-stat" style={ratioBas ? { background: "#fbeaea", borderColor: "#e7c3c3" } : undefined}>
+                  <span className="ds-stat__k">Ratio revenus / coût</span>
+                  <span className="ds-stat__v ds-num" style={ratioBas ? { color: "#b3261e" } : undefined}>{cand.score.ratio != null ? `${cand.score.ratio}×` : "-"}</span>
+                </div>
                 <div className="ds-stat"><span className="ds-stat__k">Coût mensuel</span><span className="ds-stat__v ds-num">{eur(Number(cand.loyer) + Number(cand.charges))}</span></div>
               </div>
               {cand.score.eliminatoire && (
                 <div className="ds-error" style={{ marginBottom: 12 }}>
-                  Critère éliminatoire déclenché : le score est plafonné à 40/100 (voir le détail ci-dessous).
+                  Un critère éliminatoire a été déclenché : le score est plafonné à 40 sur 100. Le détail figure ci-dessous.
                 </div>
               )}
-              {cand.score.criteres.map((c) => (
-                <div className="ds-kv" key={c.key}>
-                  <span className="ds-kv__k" style={c.eliminatoire ? { color: "#b3261e", fontWeight: 700 } : undefined}>
-                    {c.label}{c.eliminatoire ? " · ÉLIMINATOIRE" : ""}
-                  </span>
-                  <span className="ds-kv__v">
-                    <strong className="ds-num">{c.points}/{c.max}</strong>
-                    <span className="ds-muted"> · {c.detail}</span>
-                  </span>
-                </div>
-              ))}
+              <div className="score-list">
+                {cand.score.criteres.map((c) => (
+                  <div className="score-row" key={c.key}>
+                    <span className="score-row__label" style={c.eliminatoire ? { color: "#b3261e" } : undefined}>
+                      {c.label}{c.eliminatoire ? " · éliminatoire" : ""}
+                    </span>
+                    <span className="score-row__note ds-num" style={c.eliminatoire ? { color: "#b3261e" } : undefined}>{c.points}/{c.max}</span>
+                    <span className="score-row__detail">{c.detail}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </>
@@ -330,24 +352,19 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
                 <div className="ds-card" key={p}>
                   <div className="ds-card__head">Personne {p}{nomDe(p) ? ` · ${nomDe(p)}` : ""}</div>
                   <div className="ds-card__body">
-                    {s.identite && (
-                      <Kv k="Date de naissance" v={dateFr(s.identite.date_naissance)} warn={s.identite.aVerifier} />
-                    )}
-                    {e && (
-                      <>
-                        <Kv k="Salaire net mensuel" v={e.salaire_net_mensuel != null ? `${eur(e.salaire_net_mensuel)} (moyenne de ${e.nbBulletins} bulletin${e.nbBulletins > 1 ? "s" : ""})` : "·"} />
-                        <Kv k="Poste" v={e.intitule_poste ?? "·"} />
-                        <Kv k="Contrat" v={e.type_contrat ? CONTRAT_LABELS[e.type_contrat] : "·"} />
-                        <Kv
-                          k="Période d'essai"
-                          v={e.periode_essai == null ? "·" : e.periode_essai ? `oui${e.fin_periode_essai ? `, jusqu'au ${dateFr(e.fin_periode_essai)}` : ""}` : "non"}
-                        />
-                        <Kv k="Employeur" v={e.employeur ?? "·"} />
-                        <Kv k="Dans l'entreprise depuis" v={e.date_entree ? `${dateFr(e.date_entree)}${e.ancienneteMois != null ? ` (${e.ancienneteMois} mois)` : ""}` : "·"} />
-                        {e.aVerifier.length > 0 && (
-                          <p className="ds-hint" style={{ color: "#9a6700" }}>À vérifier : {e.aVerifier.join(" · ")}</p>
-                        )}
-                      </>
+                    {/* Toujours les mêmes lignes pour A et B, « - » si l'information manque. */}
+                    <Kv k="Date de naissance" v={dateFr(s.identite?.date_naissance)} warn={!!s.identite?.aVerifier} />
+                    <Kv k="Salaire net mensuel" v={e?.salaire_net_mensuel != null ? `${eur(e.salaire_net_mensuel)} (moyenne de ${e.nbBulletins} bulletin${e.nbBulletins > 1 ? "s" : ""})` : "-"} />
+                    <Kv k="Poste" v={e?.intitule_poste ?? "-"} />
+                    <Kv k="Type de contrat" v={e?.type_contrat ? CONTRAT_LABELS[e.type_contrat] : "-"} />
+                    <Kv
+                      k="Période d'essai"
+                      v={!e || e.periode_essai == null ? "-" : e.periode_essai ? `oui${e.fin_periode_essai ? `, jusqu'au ${dateFr(e.fin_periode_essai)}` : ""}` : "non"}
+                    />
+                    <Kv k="Employeur" v={e?.employeur ?? "-"} />
+                    <Kv k="Dans l'entreprise depuis" v={e?.date_entree ? `${dateFr(e.date_entree)}${e.ancienneteMois != null ? ` (${e.ancienneteMois} mois)` : ""}` : "-"} />
+                    {e && e.aVerifier.length > 0 && (
+                      <p className="ds-hint" style={{ color: "#9a6700" }}>À vérifier : {e.aVerifier.join(" · ")}</p>
                     )}
                   </div>
                 </div>
@@ -365,7 +382,7 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
             {cand.coherence.map((c, i) => (
               <div className="ds-kv" key={i}>
                 <span className="ds-kv__k" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  <span className={`ds-dot${c.ok ? "" : " ds-dot--warn"}`} /> {c.personne} · {c.check}
+                  <span className={`ds-dot${c.ok ? "" : " ds-dot--warn"}`} /> Personne {c.personne} · {c.check}
                 </span>
                 <span className="ds-kv__v" style={c.ok ? undefined : { color: "#b3261e" }}>{c.detail}</span>
               </div>
@@ -374,12 +391,13 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
         </>
       )}
 
-      {cand.score && dejaExtraits > 0 && (
+      {analyseFaite && dejaExtraits > 0 && (
         <p className="ds-hint" style={{ marginTop: 18 }}>
-          « Analyser » ne relit que les documents ajoutés ou en erreur puis recalcule le score.{" "}
+          Le bouton « Analyser le dossier » ne relit que les documents ajoutés ou en erreur, puis recalcule le score.
+          Pour forcer une nouvelle lecture de tous les documents,{" "}
           <button className="ds-btn ds-btn--ghost ds-btn--sm" onClick={() => analyser(true)} disabled={analysing}>
-            Tout ré-extraire
-          </button>
+            tout ré-extraire
+          </button>.
         </p>
       )}
     </div>

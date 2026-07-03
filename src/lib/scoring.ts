@@ -1,5 +1,10 @@
 import type { Bien, CoherenceCheck, Criteres, Score, ScoreCritere, SynthesePersonne } from "./types";
 
+/** Format monétaire « 1.250 € » (même rendu que le reste de l'outil). */
+function eur(v: number): string {
+  return Math.round(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") + " €";
+}
+
 /**
  * Étage 2 — scoring. Code pur, déterministe, zéro IA : même dossier ⇒ même
  * score, toujours, et chaque point est explicable.
@@ -91,13 +96,13 @@ export function scoreCandidat(
   }
   criteresOut.push({
     key: "ratio",
-    label: "Revenus / (loyer + charges)",
+    label: "Ratio revenus / coût du logement",
     points: ratioPts,
     max: 40,
     detail:
       ratio != null
-        ? `Revenus nets ${Math.round(revenus)} € = ${ratio.toFixed(1)}× le coût (${Math.round(cout)} €), exigé ≥ ${criteres.ratioMin}×`
-        : "Revenus non déterminables (aucun salaire net extrait)",
+        ? `Les revenus nets du ménage (${eur(revenus)}) représentent ${ratio.toFixed(1)} fois le coût du logement (${eur(cout)} de loyer et charges). Le bien exige au minimum ${criteres.ratioMin} fois ce coût.`
+        : "Revenus non déterminables : aucun salaire net n'a pu être extrait des bulletins.",
     eliminatoire: ratioElim,
   });
 
@@ -114,9 +119,11 @@ export function scoreCandidat(
     points: stabPts,
     max: 30,
     detail:
-      stabParts.map(({ p, s }) => `${p.personne} : ${s.label}`).join(" · ") +
-      (cdiElim ? " (CDI exigé sur ce bien, aucun CDI au dossier)" : "") +
-      (essaiElim ? " (période d'essai éliminatoire sur ce bien)" : ""),
+      (stabParts.length
+        ? stabParts.map(({ p, s }) => `Personne ${p.personne} : ${s.label}`).join(". ") + "."
+        : "Aucun contrat exploitable dans le dossier.") +
+      (cdiElim ? " Ce bien exige au moins un CDI, or le dossier n'en comporte aucun." : "") +
+      (essaiElim ? " Tout le ménage est en période d'essai, ce qui est éliminatoire sur ce bien." : ""),
     eliminatoire: cdiElim || essaiElim,
   });
 
@@ -131,9 +138,15 @@ export function scoreCandidat(
     points: anciennetePoints,
     max: 15,
     detail:
-      actifs
-        .map((p) => `${p.personne} : ${p.emploi!.ancienneteMois != null ? `${p.emploi!.ancienneteMois} mois` : "inconnue"}`)
-        .join(" · ") + (sousMin ? ` (sous le minimum exigé : ${criteres.ancienneteMinMois} mois)` : ""),
+      (actifs.length
+        ? actifs
+            .map(
+              (p) =>
+                `Personne ${p.personne} : ${p.emploi!.ancienneteMois != null ? `${p.emploi!.ancienneteMois} mois d'ancienneté` : "ancienneté inconnue"}`
+            )
+            .join(". ") + "."
+        : "Ancienneté non déterminable.") +
+      (sousMin ? ` L'ancienneté reste sous le minimum exigé sur ce bien (${criteres.ancienneteMinMois} mois).` : ""),
     eliminatoire: false,
   });
 
@@ -147,9 +160,9 @@ export function scoreCandidat(
     max: 15,
     detail: coherence.length
       ? ko.length
-        ? `${ko.length} incohérence${ko.length > 1 ? "s" : ""} : ${ko.map((c) => c.check).join(", ")}`
-        : `${coherence.length} contrôle${coherence.length > 1 ? "s" : ""} croisé${coherence.length > 1 ? "s" : ""} OK`
-      : "Pas assez de documents pour croiser",
+        ? `${ko.length} contrôle${ko.length > 1 ? "s" : ""} croisé${ko.length > 1 ? "s" : ""} en échec : ${ko.map((c) => c.check.toLowerCase()).join(", ")}. Chaque incohérence retire 5 points.`
+        : `Les ${coherence.length} contrôles croisés effectués sont cohérents (noms, employeurs, salaires et dates concordent).`
+      : "Le dossier ne contient pas assez de documents pour croiser les informations.",
     eliminatoire: false,
   });
 

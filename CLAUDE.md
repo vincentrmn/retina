@@ -275,10 +275,39 @@ logo Brouwers) —, Postgres via `pg` + `ensureSchema()` idempotent, mêmes conv
   `Authorization: Bearer <workspace token>`) — même méthode que Vesper ; la CLI/MCP
   rejettent ce token. Le token n'est PAS stocké : le redemander à Vincent au besoin.
 
+### Retours Vincent (03/07/2026 nuit) — polish + export PDF, livré
+
+- **Export PDF par bien** (`src/lib/exportBien.ts`, client-side jsPDF + autotable, logo Brouwers
+  rasterisé du SVG comme Vesper) : page de garde (récap bien + KPI + critères en bullets) +
+  classement des candidats + une fiche par candidat (score détaillé, synthèse A/B, cohérence).
+  Bouton « Exporter en PDF » sur la page bien (récupère la fiche complète de chaque candidat).
+  ⚠️ Police Helvetica de jsPDF = WinAnsi : pas de `≥ × ≈ —`. Fonction `S()` les remplace
+  (`min.`, `x`, `~`, `-`). Le `€` passe.
+- **Recalcul des scores à l'édition du bien** (`PATCH /api/biens/[id]`) : si loyer/charges/critères
+  changent, on recalcule le score de chaque candidat depuis sa `synthese`/`coherence` déjà stockées
+  (aucune ré-extraction, **zéro coût API**). Retourne `{rescored}`.
+- **Comptage « analysés »** : compté sur `score IS NOT NULL` (et non `statut='analyse'`), sinon un
+  candidat en `erreur_document` mais avec un score partiel n'était pas compté (bug remonté par Vincent).
+- **Coût API mesuré** (`count_tokens` sur les vrais docs) : ~0,36 $/dossier, conforme à l'estimation.
+  Le driver = tokens d'entrée des scans haute résolution (passeport = 25k tokens, pages de visa
+  vierges incluses), PAS le thinking (mesuré : qualité identique avec/sans, coût quasi identique).
+  Levier futur : plafonner la résolution (pas de `sharp` dispo, à faire proprement).
+- **Bug scoring corrigé** : `Personne ${p}` au lieu de `${p.personne}` produisait `[object Object]`.
+- **Français plus soigné** partout (détails de score en vraies phrases), plus de `×`/`≥` dans les
+  chaînes UI (formulations « fois », « au minimum »).
+- **UI** : carte d'intro Retina sur l'accueil (3 étapes) ; critères du bien en **vrais bullets**
+  (hors KPI) ; **scores colorés** dans la liste candidats (rouge si éliminatoire/faible, vert si
+  solide, ambre entre les deux) ; **notes du score alignées** en colonne fixe (`.score-row`) ;
+  **fiche synthèse A/B à lignes constantes** (tiret si absent) ; **carte ratio en rouge léger** si
+  revenus insuffisants ; **champs en fond blanc** (un champ gris paraissait désactivé) ; **badge
+  A/B des documents** clairement cliquable (`.doc-person`) + hint expliquant la détection auto ;
+  explication de la méthode + paliers dans le formulaire du bien.
+- **Favicon** : `src/app/icon.svg`, motif d'œil (rétine) dans le vert BBI.
+
 **Reste à faire** :
 1. **Calibration élargie** (autres dossiers réels du Drive) + validation du barème avec Shawna.
-2. **Export PDF par bien** (étape 5 du plan) — non commencé.
-3. Barème/poids à valider avec Shawna (valeurs actuelles = barème indicatif du §Étage 2).
+2. Barème/poids à valider avec Shawna (valeurs actuelles = barème indicatif du §Étage 2).
+3. Éventuel plafonnement de la résolution des scans (levier coût, si le volume grimpe).
 
 ## Conventions pour Claude Code
 
