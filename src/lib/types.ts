@@ -46,7 +46,11 @@ export type Bien = {
 // ---------------------------------------------------------------------------
 
 export type DocType = "fiche_paie" | "contrat" | "piece_identite";
+/** Type stocké en base : `auto` avant extraction, `autre` si non reconnu. */
+export type DocTypeStocke = DocType | "auto" | "autre";
 export type Personne = "A" | "B";
+/** Personne stockée en base : `?` tant que le doc n'est pas rattaché. */
+export type PersonneDoc = Personne | "?";
 
 export type Confiance = "haute" | "moyenne" | "basse";
 
@@ -102,8 +106,8 @@ export type Extraction = ExtractionPaie | ExtractionContrat | ExtractionIdentite
 export type DocumentMeta = {
   id: number;
   candidat_id: number;
-  personne: Personne;
-  type: DocType;
+  personne: PersonneDoc;
+  type: DocTypeStocke;
   filename: string;
   mime: string;
   size_bytes: number;
@@ -139,6 +143,14 @@ export type SynthesePersonne = {
     /** Champs à confiance basse ou manquants, à vérifier à la main. */
     aVerifier: string[];
   } | null;
+};
+
+/** Check de complétude du dossier (calculé en code après analyse). */
+export type CompletudeItem = {
+  personne: PersonneDoc;
+  label: string;
+  statut: "ok" | "partiel" | "manquant";
+  detail: string;
 };
 
 export type CoherenceCheck = {

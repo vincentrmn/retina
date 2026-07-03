@@ -92,6 +92,30 @@ export const SCHEMAS: Record<DocType, Json> = {
   piece_identite: SCHEMA_IDENTITE,
 };
 
+/**
+ * Classification (étape 1 de l'upload en batch) : schéma minuscule, sans
+ * union, passé à un modèle rapide (Haiku). L'extraction typée (Opus) vient
+ * ensuite. NB : un schéma unique type+extraction dépasse la limite de l'API
+ * sur les paramètres à union (16 max) — ne pas re-fusionner les deux étapes.
+ */
+export const SCHEMA_CLASSIFICATION: Json = {
+  type: "object",
+  properties: {
+    type_detecte: {
+      type: "string",
+      enum: ["fiche_paie", "contrat", "piece_identite", "autre"],
+      description:
+        "Nature du document : fiche_paie (bulletin(s) de salaire), contrat (contrat de travail), piece_identite (CNI/passeport/titre de séjour), autre si rien de tout ça.",
+    },
+  },
+  required: ["type_detecte"],
+  additionalProperties: false,
+};
+
+
+const SANS_CADRATIN =
+  " Dans les remarques, pas de tiret cadratin ni demi-cadratin : ponctue avec des virgules, points ou deux-points.";
+
 export const PROMPTS: Record<DocType, string> = {
   fiche_paie:
     "Ce document contient une ou plusieurs fiches de paie (bulletins de salaire), possiblement des scans de " +
@@ -99,14 +123,19 @@ export const PROMPTS: Record<DocType, string> = {
     "strictes : n'invente JAMAIS une valeur — si un champ est absent, illisible ou douteux, mets value=null ou " +
     "baisse la confiance. Les montants sont en euros ; convertis les formats locaux (1.234,56 ou 1 234,56 → " +
     "1234.56). Si un bulletin couvre une période non mensuelle, ramène les salaires au mensuel et signale-le en " +
-    "remarques.",
+    "remarques." + SANS_CADRATIN,
   contrat:
     "Ce document est un contrat de travail (possiblement plusieurs pages, scan de qualité variable). " +
     "Extrais les informations demandées. Règles strictes : n'invente JAMAIS une valeur — si un champ est absent " +
     "ou illisible, mets value=null ou baisse la confiance. Pour la période d'essai : si une durée est indiquée, " +
-    "calcule la date de fin depuis la date de début. Ne déduis pas le type de contrat s'il n'est pas explicite.",
+    "calcule la date de fin depuis la date de début. Ne déduis pas le type de contrat s'il n'est pas explicite." + SANS_CADRATIN,
   piece_identite:
     "Ce document est une pièce d'identité (carte d'identité, passeport ou titre de séjour), possiblement un scan " +
     "ou une photo. Extrais les informations demandées. Règles strictes : n'invente JAMAIS une valeur — si un champ " +
-    "est absent ou illisible, mets value=null ou baisse la confiance. Attention à l'ordre nom/prénom selon le pays.",
+    "est absent ou illisible, mets value=null ou baisse la confiance. Attention à l'ordre nom/prénom selon le pays." + SANS_CADRATIN,
 };
+
+export const PROMPT_CLASSIFICATION =
+  "Ce document fait partie d'un dossier de candidature à la location, possiblement un scan ou une photo de qualité " +
+  "variable. Détermine sa nature : fiche_paie (un ou plusieurs bulletins de salaire), contrat (contrat de travail), " +
+  "piece_identite (carte d'identité, passeport ou titre de séjour), ou autre si ce n'est rien de tout ça.";

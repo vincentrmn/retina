@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureSchema, pool } from "@/lib/db";
+import { buildCompletude } from "@/lib/synthese";
+import type { DocumentMeta } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +26,13 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         ORDER BY personne, type, uploaded_at`,
       [id]
     );
-    return NextResponse.json({ ...rows[0], documents: docs.rows });
+    const meta = docs.rows as DocumentMeta[];
+    const analysed = meta.some((d) => d.extraction_status === "done");
+    return NextResponse.json({
+      ...rows[0],
+      documents: meta,
+      completude: analysed ? buildCompletude(meta) : null,
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

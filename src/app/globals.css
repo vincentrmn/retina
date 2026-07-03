@@ -846,12 +846,34 @@ a.ds-row { text-decoration: none; color: inherit; }
 .ds-photo:hover { border-color: var(--ds-accent); }
 .ds-photo:active { transform: translateY(1px); }
 
-/* ── RETINA — ajouts spécifiques (cartes personnes, upload mobile) ───────── */
+/* ── RETINA — ajouts spécifiques (cartes personnes, dropzone, typo) ──────── */
 /* Cartes A/B : pleine largeur sur mobile, 2 colonnes dès que la place existe. */
 .ds-grid--cards { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-/* L'input fichier natif a une largeur intrinsèque qui déborde sur mobile. */
-.upload-file { flex: 1 1 160px; min-width: 0; max-width: 100%; font-size: 0.85rem; }
+
+/* KPI : libellé AU-DESSUS de la valeur (sinon ils se collent sur une ligne),
+   et valeur ramenée vers la taille du texte courant (typo homogène). */
+.ds-stat { display: flex; flex-direction: column; gap: 3px; }
+.ds-stat__k { line-height: 1.3; }
+.ds-stat__v { font-size: var(--ds-fs-lg); font-weight: 700; }
+
+/* Boutons : jamais de texte qui déborde. Sur mobile, le texte peut passer à
+   la ligne dans le bouton plutôt que d'en sortir. */
+.ds-btn { max-width: 100%; }
 @media (max-width: 640px) {
+  .ds-btn { white-space: normal; height: auto; min-height: var(--ds-ctrl-h); padding-top: 6px; padding-bottom: 6px; line-height: 1.25; }
+  .ds-section { flex-wrap: wrap; row-gap: 8px; }
   .ds-kv { flex-wrap: wrap; }
   .ds-kv__v { text-align: left; }
 }
+
+/* Dropzone d'upload en batch */
+.dropzone {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 22px 16px; text-align: center; cursor: pointer;
+  border: 2px dashed var(--ds-line-2, var(--ds-line));
+  border-radius: var(--ds-r-md); background: var(--ds-bg-subtle);
+  font-size: var(--ds-fs-sm); transition: border-color .12s, background .12s;
+}
+.dropzone:hover, .dropzone[data-over] { border-color: var(--ds-accent); background: var(--ds-accent-soft, #e3f7f0); }
+.doc-row { align-items: center; }
+.doc-row .ds-btn--sm { flex-shrink: 0; }

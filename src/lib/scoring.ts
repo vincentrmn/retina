@@ -115,8 +115,8 @@ export function scoreCandidat(
     max: 30,
     detail:
       stabParts.map(({ p, s }) => `${p.personne} : ${s.label}`).join(" · ") +
-      (cdiElim ? " — CDI exigé sur ce bien, aucun CDI au dossier" : "") +
-      (essaiElim ? " — période d'essai éliminatoire sur ce bien" : ""),
+      (cdiElim ? " (CDI exigé sur ce bien, aucun CDI au dossier)" : "") +
+      (essaiElim ? " (période d'essai éliminatoire sur ce bien)" : ""),
     eliminatoire: cdiElim || essaiElim,
   });
 
@@ -133,7 +133,7 @@ export function scoreCandidat(
     detail:
       actifs
         .map((p) => `${p.personne} : ${p.emploi!.ancienneteMois != null ? `${p.emploi!.ancienneteMois} mois` : "inconnue"}`)
-        .join(" · ") + (sousMin ? ` — sous le minimum exigé (${criteres.ancienneteMinMois} mois)` : ""),
+        .join(" · ") + (sousMin ? ` (sous le minimum exigé : ${criteres.ancienneteMinMois} mois)` : ""),
     eliminatoire: false,
   });
 

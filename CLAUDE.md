@@ -243,6 +243,25 @@ logo Brouwers) —, Postgres via `pg` + `ensureSchema()` idempotent, mêmes conv
 - Flux complet testé end-to-end en local (Postgres 16 local) : bien → candidat → upload 3
   vrais PDF → analyse 19 s → score 55/100 cohérent (bulletins 2024 signalés trop vieux).
 
+### Retours Vincent (03/07/2026 soir) — upload batch + polish, livré
+
+- **Upload en batch (feature clé)** : une seule dropzone, tous les documents en vrac, sans
+  choisir type ni personne. Pipeline en 2 temps : **classification Haiku**
+  (`claude-haiku-4-5`, `SCHEMA_CLASSIFICATION` minuscule) puis extraction typée Opus.
+  ⚠️ Un schéma unique type+extraction dépasse la limite API de 16 paramètres à union
+  (l'erreur 400 le dit explicitement) : ne PAS re-fusionner les deux étapes.
+- **Rattachement automatique A/B** (`assignPersonnes`, code pur) : regroupement des docs par
+  nom extrait (`sameEntity`), les docs déjà rattachés ancrent leur groupe, badge A/B cliquable
+  pour corriger à la main (PATCH `/api/documents`). `documents.personne = '?'` tant que non
+  rattaché, `documents.type = 'auto'|'autre'` possibles.
+- **Complétude** (`buildCompletude`) : par personne, pièce d'identité / contrat / 3 bulletins
+  récents, affichée en carte « Le dossier est-il complet ? » (ok/partiel/manquant).
+- **Zéro tiret cadratin** dans l'UI (exigence Vincent) : chaînes de code nettoyées, remarques
+  du modèle sanitisées (`sansCadratin` dans extract.ts) + consigne dans les prompts.
+- **Typo/responsive** : KPI `.ds-stat` empilés (libellé au-dessus, valeur en `--ds-fs-lg` au
+  lieu de xl), boutons sans débordement (wrap sur mobile), section « RETINA — ajouts » de
+  `globals.css`.
+
 **Déploiement Railway — FAIT (03/07/2026), testé end-to-end en prod** :
 - **URL : https://retina-production-6d72.up.railway.app** (un 2ᵉ domaine `retina-production-9985`
   existe aussi, généré en double — sans conséquence). Analyse d'un dossier réel en prod : 21 s,

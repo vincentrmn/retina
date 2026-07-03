@@ -2,6 +2,7 @@ import type {
   BulletinPaie,
   Champ,
   CoherenceCheck,
+  CompletudeItem,
   DocumentMeta,
   ExtractionContrat,
   ExtractionIdentite,
@@ -205,11 +206,151 @@ export function buildCoherence(docs: DocumentMeta[], now = new Date()): Coherenc
           personne: p,
           check: "Bulletins consécutifs et récents",
           ok,
-          detail: `${periods.join(", ")}${recent ? "" : ` — dernier bulletin vieux de ${ageMois} mois`}${consecutifs ? "" : " — périodes non consécutives"}`,
+          detail: `${periods.join(", ")}${recent ? "" : ` (dernier bulletin vieux de ${ageMois} mois)`}${consecutifs ? "" : " (périodes non consécutives)"}`,
         });
       }
     }
   }
 
   return checks;
+}
+
+// ---------------------------------------------------------------------------
+// Rattachement automatique des documents aux personnes A/B (upload en batch)
+// ---------------------------------------------------------------------------
+
+/** Nom lisible sur un document extrait (sert au regroupement par personne). */
+export function nomDuDoc(d: DocumentMeta): string | null {
+  if (d.extraction_status !== "done" || !d.extraction) return null;
+  if (d.type === "fiche_paie") {
+    const b = (d.extraction as ExtractionPaie).bulletins ?? [];
+    return b.map((x) => val(x.nom_complet)).find((v) => v) ?? null;
+  }
+  if (d.type === "contrat") return val((d.extraction as ExtractionContrat).nom_complet);
+  if (d.type === "piece_identite") {
+    const i = d.extraction as ExtractionIdentite;
+    return [val(i.prenom), val(i.nom)].filter(Boolean).join(" ") || null;
+  }
+  return null;
+}
+
+/**
+ * Regroupe les documents par personne à partir des noms extraits. Les docs
+ * déjà rattachés (A/B) ancrent leur groupe ; les docs `?` rejoignent le
+ * groupe dont le nom correspond, ou ouvrent un nouveau groupe (A puis B).
+ * Retourne la liste { docId, personne } des rattachements à écrire.
+ */
+export function assignPersonnes(docs: DocumentMeta[]): { docId: number; personne: Personne }[] {
+  type Groupe = { noms: string[]; lettre: Personne | null; docIds: number[] };
+  const groupes: Groupe[] = [];
+  const ordered = [...docs].sort((a, b) => a.id - b.id);
+
+  for (const d of ordered) {
+    const nom = nomDuDoc(d);
+    if (!nom) continue; // sans nom lisible : reste tel quel
+    let g = groupes.find((x) => x.noms.some((n) => sameEntity(n, nom)));
+    if (!g) {
+      g = { noms: [], lettre: null, docIds: [] };
+      groupes.push(g);
+    }
+    g.noms.push(nom);
+    g.docIds.push(d.id);
+    if (d.personne === "A" || d.personne === "B") g.lettre = g.lettre ?? d.personne;
+  }
+
+  // Attribue les lettres libres aux groupes sans ancre, dans l'ordre d'apparition.
+  const prises = new Set(groupes.map((g) => g.lettre).filter(Boolean) as Personne[]);
+  for (const g of groupes) {
+    if (g.lettre) continue;
+    const libre = (["A", "B"] as Personne[]).find((l) => !prises.has(l));
+    if (!libre) break; // plus de 2 personnes détectées : on laisse en `?`
+    g.lettre = libre;
+    prises.add(libre);
+  }
+
+  const out: { docId: number; personne: Personne }[] = [];
+  for (const g of groupes) {
+    if (!g.lettre) continue;
+    for (const id of g.docIds) {
+      const d = docs.find((x) => x.id === id)!;
+      if (d.personne === "?") out.push({ docId: id, personne: g.lettre });
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Complétude du dossier (check après analyse)
+// ---------------------------------------------------------------------------
+
+export function buildCompletude(docs: DocumentMeta[], now = new Date()): CompletudeItem[] {
+  const items: CompletudeItem[] = [];
+  const personnes: Personne[] = ["A", "B"];
+
+  for (const p of personnes) {
+    const { paies, contrat, identite } = groupDocs(docs, p);
+    const desDocs = docs.some((d) => d.personne === p);
+    if (!desDocs && !paies.length) continue;
+
+    // Pièce d'identité
+    items.push({
+      personne: p,
+      label: "Pièce d'identité",
+      statut: identite ? "ok" : "manquant",
+      detail: identite ? "présente" : "à uploader",
+    });
+
+    // Contrat de travail
+    items.push({
+      personne: p,
+      label: "Contrat de travail",
+      statut: contrat ? "ok" : "manquant",
+      detail: contrat ? "présent" : "à uploader",
+    });
+
+    // Bulletins : 3 attendus, le dernier < 3 mois
+    const periods = paies
+      .map((f) => val(f.periode))
+      .filter((v): v is string => !!v && /^\d{4}-\d{2}$/.test(v))
+      .sort();
+    let statut: CompletudeItem["statut"] = "manquant";
+    let detail = "aucun bulletin";
+    if (paies.length) {
+      const last = periods[periods.length - 1];
+      let recent = false;
+      if (last) {
+        const [y, m] = last.split("-").map(Number);
+        recent = (now.getFullYear() - y) * 12 + (now.getMonth() + 1 - m) <= 3;
+      }
+      if (paies.length >= 3 && recent) {
+        statut = "ok";
+        detail = `${paies.length} bulletins, le dernier est récent`;
+      } else {
+        statut = "partiel";
+        detail = `${paies.length} bulletin${paies.length > 1 ? "s" : ""} sur 3 attendus${last && !recent ? ", le dernier date de " + last : ""}`;
+      }
+    }
+    items.push({ personne: p, label: "3 derniers bulletins de salaire", statut, detail });
+  }
+
+  // Documents non rattachés ou non reconnus
+  const orphelins = docs.filter((d) => d.personne === "?" && d.extraction_status === "done");
+  if (orphelins.length) {
+    items.push({
+      personne: "?",
+      label: "Documents à rattacher",
+      statut: "partiel",
+      detail: `${orphelins.length} document${orphelins.length > 1 ? "s" : ""} sans personne identifiée (choisir A ou B à la main)`,
+    });
+  }
+  const inconnus = docs.filter((d) => d.type === "autre");
+  if (inconnus.length) {
+    items.push({
+      personne: "?",
+      label: "Documents non reconnus",
+      statut: "partiel",
+      detail: inconnus.map((d) => d.filename).join(", "),
+    });
+  }
+  return items;
 }
