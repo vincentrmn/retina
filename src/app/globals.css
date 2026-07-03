@@ -914,3 +914,10 @@ a.ds-row { text-decoration: none; color: inherit; }
 .score-row__label { font-weight: 600; font-size: var(--ds-fs-sm); }
 .score-row__note { font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; font-size: var(--ds-fs-sm); }
 .score-row__detail { grid-column: 1 / -1; color: var(--ds-ink-soft); font-size: var(--ds-fs-sm); line-height: 1.5; }
+
+/* Champ de saisie toujours blanc (un fond gris paraît désactivé), spécificité renforcée. */
+.wrap .ds-input, .wrap .ds-select { background: #fff; }
+.wrap .ds-input:focus, .wrap .ds-select:focus { background: #fff; }
+
+/* En-têtes de carte : nettement en gras pour bien ressortir. */
+.ds-card__head { font-weight: 700; }

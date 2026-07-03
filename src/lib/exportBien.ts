@@ -156,21 +156,30 @@ export async function exportBienPdf(bien: Bien, candidats: CandidatComplet[]) {
     margin: { left: 14, right: 14 },
   });
 
-  // --- Une fiche par candidat ---
+  // --- Une fiche par candidat (toutes, même non analysées) ---
   for (const c of classés) {
-    if (!c.score && !c.synthese) continue;
+   try {
     doc.addPage();
     y = 16;
     doc.setTextColor(...INK); bold(); doc.setFontSize(14);
-    doc.text(c.nom, 14, y);
+    doc.text(S(c.nom || "Candidat sans nom"), 14, y);
     if (c.score) {
       const col = c.score.eliminatoire ? RED : GREEN;
       doc.setTextColor(...col); doc.setFontSize(14);
       doc.text(`${c.score.total}/100`, PW - 14, y, { align: "right" });
+    } else {
+      doc.setTextColor(...SOFT); reg(); doc.setFontSize(10);
+      doc.text("non analysé", PW - 14, y, { align: "right" });
     }
     y += 4;
     doc.setDrawColor(...LINE); doc.line(14, y, PW - 14, y);
     y += 8;
+
+    if (!c.score && !(c.synthese && c.synthese.length)) {
+      doc.setTextColor(...SOFT); reg(); doc.setFontSize(9.5);
+      doc.text(doc.splitTextToSize("Ce candidat n'a pas encore été analysé, ou ses documents ne permettent pas d'établir une fiche détaillée.", W), 14, y);
+      continue;
+    }
 
     // Score détaillé
     if (c.score) {
@@ -237,7 +246,15 @@ export async function exportBienPdf(bien: Bien, candidats: CandidatComplet[]) {
       });
       y = (doc as any).lastAutoTable.finalY + 6;
     }
+   } catch (e) {
+     // Un candidat au format inattendu ne doit jamais empêcher le téléchargement du PDF.
+     doc.setTextColor(...SOFT); reg(); doc.setFontSize(9);
+     doc.text("Fiche indisponible pour ce candidat.", 14, y + 6);
+   }
   }
+
+  // Fiche signalétique : appliquer S() sur les valeurs texte est inutile (déjà propre),
+  // mais le nom du candidat et les libellés passent par S() ci-dessus.
 
   // Pied de page sur toutes les pages
   const pages = doc.getNumberOfPages();

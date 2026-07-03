@@ -141,7 +141,7 @@ export function buildCoherence(docs: DocumentMeta[], now = new Date()): Coherenc
       if (same != null) {
         checks.push({
           personne: p,
-          check: "Identité ↔ fiche de paie",
+          check: "Nom : identité et fiche de paie",
           ok: same,
           detail: same
             ? `« ${paieNom} » correspond à la pièce d'identité`
@@ -158,7 +158,7 @@ export function buildCoherence(docs: DocumentMeta[], now = new Date()): Coherenc
       if (same != null) {
         checks.push({
           personne: p,
-          check: "Employeur contrat ↔ bulletins",
+          check: "Employeur : contrat et bulletins",
           ok: same,
           detail: same ? `« ${empP} » sur les deux documents` : `Contrat : « ${empC} » / bulletins : « ${empP} »`,
         });
@@ -177,7 +177,7 @@ export function buildCoherence(docs: DocumentMeta[], now = new Date()): Coherenc
         const ok = Math.abs(sc - avg) / Math.max(sc, avg) <= 0.15;
         checks.push({
           personne: p,
-          check: "Salaire contrat ↔ bulletins",
+          check: "Salaire : contrat et bulletins",
           ok,
           detail: `Contrat : ${Math.round(sc)} € ${brut ? "brut" : "net"} / bulletins : ${Math.round(avg)} € en moyenne`,
         });

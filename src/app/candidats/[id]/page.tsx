@@ -383,14 +383,16 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
         <>
           <div className="ds-section"><span className="ds-h2">Contrôles de cohérence</span><span className="ds-rule" /></div>
           <div className="ds-card"><div className="ds-card__body">
-            {cand.coherence.map((c, i) => (
-              <div className="ds-kv" key={i}>
-                <span className="ds-kv__k" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  <span className={`ds-dot${c.ok ? "" : " ds-dot--warn"}`} /> Personne {c.personne} · {c.check}
-                </span>
-                <span className="ds-kv__v" style={c.ok ? undefined : { color: "#b3261e" }}>{c.detail}</span>
-              </div>
-            ))}
+            <div className="score-list">
+              {cand.coherence.map((c, i) => (
+                <div className="score-row" key={i}>
+                  <span className="score-row__label" style={{ display: "inline-flex", alignItems: "center", gap: 8, color: c.ok ? undefined : "#b3261e" }}>
+                    <span className={`ds-dot${c.ok ? "" : " ds-dot--warn"}`} /> Personne {c.personne} · {c.check}
+                  </span>
+                  <span className="score-row__detail" style={c.ok ? undefined : { color: "#b3261e" }}>{c.detail}</span>
+                </div>
+              ))}
+            </div>
           </div></div>
         </>
       )}
