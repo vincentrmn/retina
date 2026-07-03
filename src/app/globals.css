@@ -932,18 +932,37 @@ a.ds-row { text-decoration: none; color: inherit; }
 /* En-têtes de carte : nettement en gras pour bien ressortir. */
 .ds-card__head { font-weight: 700; }
 
-/* Critères d'éligibilité (formulaire bien) : [activer] nom en gras : explication [éliminatoire]. */
+/* Critères d'éligibilité (formulaire bien) : grille alignée
+   [interrupteur] [texte du critère] [puce éliminatoire]. */
 .crit-list { display: grid; gap: 2px; }
-.crit-row { display: flex; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--ds-line); }
+.crit-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--ds-line);
+}
 .crit-row:last-child { border-bottom: 0; }
-.crit-main { flex: 1; min-width: 0; }
-.crit-text { margin: 0; line-height: 1.55; font-size: var(--ds-fs-sm); }
+.crit-main { min-width: 0; }
+.crit-text { margin: 0; line-height: 1.6; font-size: var(--ds-fs-sm); }
 .crit-name { font-weight: 700; }
-.crit-ctrl { flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.crit-ctrl { justify-self: end; display: flex; align-items: center; }
 /* Critère désactivé : explication grisée (l'interrupteur reste net). */
 .crit-row[data-inactive] .crit-main { opacity: 0.45; }
-/* Petit champ pour un simple nombre (pas de champ démesuré). */
-.crit-inline { display: inline-block; width: 52px; height: auto; padding: 3px 6px; margin: 0 4px; text-align: center; font-variant-numeric: tabular-nums; }
+/* Petit champ pour un simple nombre — jamais la pleine largeur. Sélecteur
+   `input.crit-num` (spécificité 0,1,1) pour battre la règle générique
+   `input[type="number"] { width:100% }` définie plus haut. */
+input.crit-num {
+  display: inline-block; width: 56px; height: auto; padding: 4px 8px; margin: 0 5px;
+  border: 1px solid var(--ds-line-2, var(--ds-line)); border-radius: var(--ds-r-md);
+  background: #fff; color: var(--ds-ink); font: inherit; font-size: var(--ds-fs-sm);
+  text-align: center; font-variant-numeric: tabular-nums; vertical-align: baseline;
+  -moz-appearance: textfield;
+}
+input.crit-num:focus { outline: none; border-color: var(--ds-accent); background: #fff; }
+input.crit-num:disabled { background: var(--ds-bg-subtle); color: var(--ds-ink-faint); }
+input.crit-num::-webkit-outer-spin-button, input.crit-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 /* Puce/toggle « éliminatoire » : rouge si actif, contour gris sinon. */
 .elim-toggle { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--ds-line-2, var(--ds-line)); background: #fff; color: var(--ds-ink-soft); border-radius: var(--ds-r-pill); padding: 6px 13px; font-size: var(--ds-fs-xs); font-weight: 700; cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s, color .12s; }
 .elim-toggle:hover:not(:disabled) { border-color: #e7c3c3; }
@@ -951,7 +970,13 @@ a.ds-row { text-decoration: none; color: inherit; }
 .elim-toggle__dot { width: 9px; height: 9px; border-radius: 50%; border: 2px solid currentColor; box-sizing: border-box; }
 .elim-toggle--on { background: #fbeaea; border-color: #e7c3c3; color: #b3261e; }
 .elim-toggle--on .elim-toggle__dot { background: #b3261e; }
-@media (max-width: 640px) { .crit-row { flex-wrap: wrap; } .crit-main { flex-basis: 100%; order: 3; } }
+@media (max-width: 640px) {
+  input.crit-num { font-size: 16px; }
+  /* Mobile : interrupteur + puce sur la 1ʳᵉ ligne, texte pleine largeur dessous. */
+  .crit-row { grid-template-columns: auto 1fr; row-gap: 8px; }
+  .crit-main { grid-column: 1 / -1; }
+  .crit-ctrl { grid-column: 2; justify-self: end; }
+}
 
 /* Tableau « Comment le score est-il calculé ? » : hauteur de ligne constante. */
 .score-tbl-wrap { overflow-x: auto; }

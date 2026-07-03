@@ -108,7 +108,7 @@ export default function BienForm({ bienId }: { bienId?: number }) {
             <div className="crit-main">
               <p className="crit-text">
                 <span className="crit-name">Revenus/coût du logement</span> : les revenus nets du ménage doivent atteindre au moins
-                <input className="ds-input crit-inline" type="number" step="0.5" min="0" disabled={!criteres.ratioActif} value={criteres.ratioMin} onChange={(e) => setC("ratioMin", Number(e.target.value))} />
+                <input className="crit-num" type="number" step="0.5" min="0" disabled={!criteres.ratioActif} value={criteres.ratioMin} onChange={(e) => setC("ratioMin", Number(e.target.value))} />
                 fois le loyer et les charges.
               </p>
             </div>
@@ -154,7 +154,7 @@ export default function BienForm({ bienId }: { bienId?: number }) {
             <div className="crit-main">
               <p className="crit-text">
                 <span className="crit-name">Ancienneté dans l&apos;entreprise</span> : exiger au moins
-                <input className="ds-input crit-inline" type="number" min="0" disabled={!criteres.ancienneteActif} value={criteres.ancienneteMinMois} onChange={(e) => setC("ancienneteMinMois", Number(e.target.value))} />
+                <input className="crit-num" type="number" min="0" disabled={!criteres.ancienneteActif} value={criteres.ancienneteMinMois} onChange={(e) => setC("ancienneteMinMois", Number(e.target.value))} />
                 mois d&apos;ancienneté.
               </p>
             </div>
