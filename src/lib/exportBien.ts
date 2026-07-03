@@ -18,14 +18,51 @@ const SUBTLE: [number, number, number] = [246, 248, 247];
 
 const eur = (n: number | null | undefined) =>
   n == null || !isFinite(Number(n)) ? "-" : Math.round(Number(n)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") + " €";
-/** La police par défaut de jsPDF (Helvetica/WinAnsi) ne connaît pas ≥ × ≈ — : on les remplace. */
-const S = (v: any) =>
-  String(v ?? "")
-    .replace(/≥/g, "min. ")
-    .replace(/≤/g, "max. ")
-    .replace(/[×✕]/g, "x")
-    .replace(/≈/g, "~")
-    .replace(/[—–]/g, "-");
+/**
+ * La police par défaut de jsPDF (Helvetica) n'encode QUE le jeu WinAnsi (CP1252).
+ * Tout caractère hors de ce jeu n'est pas seulement absent : il casse le rendu de
+ * TOUTE la ligne (espacement des lettres déréglé). Or les textes produits par le
+ * modèle (français) contiennent des caractères invisibles dans le navigateur mais
+ * absents de WinAnsi : espace fine insécable (U+202F), espace fine (U+2009),
+ * trait d'union insécable (U+2011), flèches, ≥ ≈, etc.
+ *
+ * `S()` garantit qu'aucun caractère hors WinAnsi n'atteint le PDF : on garde les
+ * caractères sûrs (dont les accents et « » € œ), on remplace les cas connus par un
+ * équivalent lisible, et on translittère/retire le reste. Filet de sécurité ultime :
+ * plus jamais de ligne cassée, quoi que renvoie l'extraction.
+ */
+const WINANSI_EXTRA = new Set([
+  0x20ac, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160,
+  0x2039, 0x0152, 0x017d, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014,
+  0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x017e, 0x0178,
+]);
+const inWinAnsi = (cp: number) => cp <= 0x7f || (cp >= 0xa0 && cp <= 0xff) || WINANSI_EXTRA.has(cp);
+const REMAP: Record<number, string> = {
+  // Espaces exotiques -> espace normale
+  0x00a0: " ", 0x2000: " ", 0x2001: " ", 0x2002: " ", 0x2003: " ", 0x2004: " ",
+  0x2005: " ", 0x2006: " ", 0x2007: " ", 0x2008: " ", 0x2009: " ", 0x200a: " ",
+  0x202f: " ", 0x205f: " ", 0x3000: " ", 0x200b: "", 0xfeff: "",
+  // Tirets / traits d'union -> -
+  0x2010: "-", 0x2011: "-", 0x2012: "-", 0x2015: "-", 0x2212: "-", 0x2043: "-",
+  // Symboles maths / flèches -> ASCII lisible
+  0x2192: "->", 0x2190: "<-", 0x2194: "<->", 0x21d2: "=>", 0x2265: "min.",
+  0x2264: "max.", 0x2260: "!=", 0x2248: "~", 0x00d7: "x", 0x2717: "x",
+  0x2713: "OK", 0x2714: "OK", 0x2217: "*", 0x2219: "-",
+};
+const S = (v: any): string => {
+  const s = String(v ?? "").normalize("NFC");
+  let out = "";
+  for (const ch of s) {
+    const cp = ch.codePointAt(0)!;
+    if (inWinAnsi(cp)) { out += ch; continue; }
+    if (cp in REMAP) { out += REMAP[cp]; continue; }
+    // Dernier recours : décomposer (retire les diacritiques exotiques) et ne garder
+    // que ce qui est représentable ; sinon on laisse tomber le caractère.
+    const dec = ch.normalize("NFKD").replace(/[̀-ͯ]/g, "");
+    for (const d of dec) { const c = d.codePointAt(0)!; if (inWinAnsi(c)) out += d; }
+  }
+  return out.replace(/ {2,}/g, " ");
+};
 const CONTRAT: Record<string, string> = { CDI: "CDI", CDD: "CDD", interim: "Intérim", independant: "Indépendant", autre: "Autre" };
 const dateFr = (iso: string | null | undefined) => {
   if (!iso) return "-";
@@ -75,6 +112,15 @@ export async function exportBienPdf(bien: Bien, candidats: CandidatComplet[]) {
   const { default: jsPDF } = await import("jspdf");
   const autoTable = (await import("jspdf-autotable")).default;
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+  // Filet de sécurité global : on assainit TOUT texte dessiné, y compris les
+  // cellules rendues en interne par autotable. Ainsi aucun caractère hors WinAnsi
+  // (espaces fines, flèches, tirets exotiques du texte extrait) ne peut casser une
+  // ligne, même si on oublie un S() quelque part.
+  const _text = (doc as any).text.bind(doc);
+  (doc as any).text = (txt: any, ...rest: any[]) =>
+    _text(Array.isArray(txt) ? txt.map(S) : S(txt), ...rest);
+
   const W = 182;
   const PW = 210;
   const bold = () => doc.setFont("helvetica", "bold");
@@ -143,7 +189,7 @@ export async function exportBienPdf(bien: Bien, candidats: CandidatComplet[]) {
     head: [["#", "Candidat", "Score", "Revenus ménage", "Ratio", "Statut"]],
     body: classés.map((c, i) => [
       c.score ? String(i + 1) : "-",
-      c.nom,
+      S(c.nom),
       c.score ? `${c.score.total}/100${c.score.eliminatoire ? " (élim.)" : ""}` : "non analysé",
       c.score?.revenusMenage ? eur(c.score.revenusMenage) : "-",
       c.score?.ratio != null ? `${c.score.ratio}x` : "-",
@@ -214,10 +260,10 @@ export async function exportBienPdf(bien: Bien, candidats: CandidatComplet[]) {
         body: [
           ["Date de naissance", dateFr(s.identite?.date_naissance)],
           ["Salaire net mensuel", e.salaire_net_mensuel != null ? `${eur(e.salaire_net_mensuel)} (moyenne de ${e.nbBulletins ?? 0} bulletin(s))` : "-"],
-          ["Poste", e.intitule_poste ?? "-"],
+          ["Poste", S(e.intitule_poste ?? "-")],
           ["Type de contrat", e.type_contrat ? CONTRAT[e.type_contrat] ?? e.type_contrat : "-"],
           ["Période d'essai", e.periode_essai == null ? "-" : e.periode_essai ? `oui${e.fin_periode_essai ? ", jusqu'au " + dateFr(e.fin_periode_essai) : ""}` : "non"],
-          ["Employeur", e.employeur ?? "-"],
+          ["Employeur", S(e.employeur ?? "-")],
           ["Dans l'entreprise depuis", e.date_entree ? `${dateFr(e.date_entree)}${e.ancienneteMois != null ? ` (${e.ancienneteMois} mois)` : ""}` : "-"],
         ],
         styles: { fontSize: 8.5, cellPadding: 2, textColor: INK, lineColor: LINE, lineWidth: 0.1 },
