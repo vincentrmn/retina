@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureSchema, pool } from "@/lib/db";
-import { DEFAULT_CRITERES } from "@/lib/types";
+import { normalizeCriteres } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     const charges = Number(body.charges ?? 0);
     if (!adresse) return NextResponse.json({ error: "Adresse obligatoire" }, { status: 400 });
     if (!isFinite(loyer) || loyer <= 0) return NextResponse.json({ error: "Loyer invalide" }, { status: 400 });
-    const criteres = { ...DEFAULT_CRITERES, ...(body.criteres ?? {}) };
+    const criteres = normalizeCriteres(body.criteres ?? {});
     const { rows } = await pool.query(
       `INSERT INTO biens (adresse, loyer, charges, criteres) VALUES ($1,$2,$3,$4) RETURNING id`,
       [adresse, loyer, isFinite(charges) ? charges : 0, JSON.stringify(criteres)]

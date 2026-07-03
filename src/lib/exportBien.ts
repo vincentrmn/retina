@@ -1,4 +1,4 @@
-import type { Bien, Candidat, Personne } from "./types";
+import { normalizeCriteres, type Bien, type Candidat, type Personne } from "./types";
 
 /**
  * Export PDF de l'analyse d'un bien : page de garde (récap du bien + critères),
@@ -99,13 +99,18 @@ async function loadLogo(): Promise<{ dataUrl: string; ratio: number } | null> {
   }
 }
 
-function criteresLignes(cr: any): string[] {
+function criteresLignes(raw: any): string[] {
+  const cr = normalizeCriteres(raw);
   return [
-    `Revenus nets du ménage exigés : au moins ${cr.ratioMin ?? 3} fois le loyer + charges${cr.ratioEliminatoire ? " (éliminatoire)" : ""}.`,
-    cr.cdiRequis ? "Au moins un CDI exigé dans le ménage." : "Pas d'exigence de CDI.",
-    cr.cddAccepte ? "Les CDD sont acceptés." : "Les CDD sont fortement pénalisés.",
-    cr.essaiEliminatoire ? "Une période d'essai en cours est éliminatoire si tout le ménage est concerné." : "La période d'essai est pénalisante mais pas éliminatoire.",
-    cr.ancienneteMinMois > 0 ? `Ancienneté minimale exigée : ${cr.ancienneteMinMois} mois.` : "Pas d'ancienneté minimale exigée.",
+    cr.ratioActif
+      ? `Revenus nets du ménage exigés : au moins ${cr.ratioMin} fois le loyer et les charges${cr.ratioEliminatoire ? " (éliminatoire)" : ""}.`
+      : "Aucune exigence de revenus sur ce bien.",
+    cr.cdiActif ? `Au moins un CDI exigé dans le ménage${cr.cdiEliminatoire ? " (éliminatoire)" : ""}.` : "Pas d'exigence de CDI.",
+    cr.cddAccepte ? "Les CDD sont acceptés comme revenu stable." : "Les CDD sont fortement pénalisés.",
+    cr.essaiActif
+      ? `Période d'essai prise en compte${cr.essaiEliminatoire ? " (éliminatoire si tout le ménage est en essai)" : ""}.`
+      : "Période d'essai non prise en compte.",
+    cr.ancienneteActif && cr.ancienneteMinMois > 0 ? `Ancienneté minimale exigée : ${cr.ancienneteMinMois} mois.` : "Pas d'ancienneté minimale exigée.",
   ];
 }
 
@@ -282,7 +287,12 @@ export async function exportBienPdf(bien: Bien, candidats: CandidatComplet[]) {
       y += 2;
       autoTable(doc, {
         startY: y + 2,
-        body: c.coherence.map((ch: any) => [ch.ok ? "OK" : "!", S(`${ch.personne} · ${ch.check}`), S(ch.detail)]),
+        body: c.coherence.map((ch: any) => {
+          // Une incohérence validée à la main (ignored) est considérée comme OK.
+          const resolved = ch.ok || ch.ignored;
+          const detail = !ch.ok && ch.ignored ? `${ch.detail} Validé à la main : sans effet sur la note.` : ch.detail;
+          return [resolved ? "OK" : "!", S(`${ch.personne} · ${ch.check}`), S(detail)];
+        }),
         styles: { fontSize: 8.5, cellPadding: 2, textColor: INK, lineColor: LINE, lineWidth: 0.1, valign: "top" },
         columnStyles: { 0: { cellWidth: 10, halign: "center", fontStyle: "bold" }, 1: { cellWidth: 55, fontStyle: "bold" } },
         didParseCell: (data: any) => {

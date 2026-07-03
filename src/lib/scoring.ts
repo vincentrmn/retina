@@ -1,4 +1,4 @@
-import type { Bien, CoherenceCheck, Criteres, Score, ScoreCritere, SynthesePersonne } from "./types";
+import { normalizeCriteres, type Bien, type CoherenceCheck, type Criteres, type Score, type ScoreCritere, type SynthesePersonne } from "./types";
 
 /** Format monétaire « 1.250 € » (même rendu que le reste de l'outil). */
 function eur(v: number): string {
@@ -77,7 +77,7 @@ export function scoreCandidat(
   coherence: CoherenceCheck[],
   now = new Date()
 ): Score {
-  const criteres = bien.criteres;
+  const criteres = normalizeCriteres(bien.criteres);
   const criteresOut: ScoreCritere[] = [];
   const cout = Number(bien.loyer) + Number(bien.charges);
   const actifs = synthese.filter((p) => p.emploi);
@@ -90,19 +90,24 @@ export function scoreCandidat(
   const ratio = revenus > 0 && cout > 0 ? revenus / cout : null;
   let ratioPts = 0;
   let ratioElim = false;
-  if (ratio != null) {
+  let ratioDetail: string;
+  if (!criteres.ratioActif) {
+    // Critère désactivé sur ce bien : aucune exigence de revenus, points pleins.
+    ratioPts = 40;
+    ratioDetail = "Aucune exigence de revenus n'est appliquée sur ce bien (critère désactivé).";
+  } else if (ratio != null) {
     ratioPts = ratio >= criteres.ratioMin ? 40 : Math.max(0, Math.round((ratio / criteres.ratioMin) * 40));
     ratioElim = criteres.ratioEliminatoire && ratio < criteres.ratioMin;
+    ratioDetail = `Les revenus nets du ménage (${eur(revenus)}) représentent ${ratio.toFixed(1)} fois le coût du logement (${eur(cout)} de loyer et charges). Le bien exige au minimum ${criteres.ratioMin} fois ce coût.`;
+  } else {
+    ratioDetail = "Revenus non déterminables : aucun salaire net n'a pu être extrait des bulletins.";
   }
   criteresOut.push({
     key: "ratio",
     label: "Ratio revenus/coût du logement",
     points: ratioPts,
     max: 40,
-    detail:
-      ratio != null
-        ? `Les revenus nets du ménage (${eur(revenus)}) représentent ${ratio.toFixed(1)} fois le coût du logement (${eur(cout)} de loyer et charges). Le bien exige au minimum ${criteres.ratioMin} fois ce coût.`
-        : "Revenus non déterminables : aucun salaire net n'a pu être extrait des bulletins.",
+    detail: ratioDetail,
     eliminatoire: ratioElim,
   });
 
@@ -110,9 +115,9 @@ export function scoreCandidat(
   const stabParts = actifs.map((p) => ({ p, s: stabilitePersonne(p, criteres, now) }));
   const stabPts = Math.round(pondere(actifs, (p) => stabilitePersonne(p, criteres, now).pts));
   const aucunCdi = actifs.length > 0 && !actifs.some((p) => p.emploi!.type_contrat === "CDI");
-  const cdiElim = criteres.cdiRequis && aucunCdi;
+  const cdiElim = criteres.cdiActif && criteres.cdiEliminatoire && aucunCdi;
   const tousEnEssai = actifs.length > 0 && actifs.every((p) => essaiEnCours(p, now));
-  const essaiElim = criteres.essaiEliminatoire && tousEnEssai;
+  const essaiElim = criteres.essaiActif && criteres.essaiEliminatoire && tousEnEssai;
   criteresOut.push({
     key: "stabilite",
     label: "Stabilité des contrats",
@@ -130,7 +135,7 @@ export function scoreCandidat(
   // --- 3. Ancienneté (15 pts) ------------------------------------------------
   let anciennetePoints = Math.round(pondere(actifs, (p) => anciennetePts(p.emploi!.ancienneteMois)));
   const maxAnc = Math.max(0, ...actifs.map((p) => p.emploi!.ancienneteMois ?? 0));
-  const sousMin = criteres.ancienneteMinMois > 0 && maxAnc < criteres.ancienneteMinMois;
+  const sousMin = criteres.ancienneteActif && criteres.ancienneteMinMois > 0 && maxAnc < criteres.ancienneteMinMois;
   if (sousMin) anciennetePoints = 0;
   criteresOut.push({
     key: "anciennete",

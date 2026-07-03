@@ -8,14 +8,21 @@ import { DEFAULT_CRITERES, type Criteres } from "@/lib/types";
  * Puce cliquable « Éliminatoire » : rouge quand le critère est éliminatoire,
  * contour gris sinon. C'est le toggle qui décide du caractère éliminatoire.
  */
-function ElimToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+function ElimToggle({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
       type="button"
-      className={`elim-toggle${on ? " elim-toggle--on" : ""}`}
+      className={`elim-toggle${on && !disabled ? " elim-toggle--on" : ""}`}
       aria-pressed={on}
+      disabled={disabled}
       onClick={() => onChange(!on)}
-      title={on ? "Critère éliminatoire — cliquez pour le rendre seulement pénalisant" : "Cliquez pour rendre ce critère éliminatoire"}
+      title={
+        disabled
+          ? "Activez d'abord le critère pour choisir s'il est éliminatoire"
+          : on
+          ? "Critère éliminatoire — cliquez pour le rendre seulement pénalisant"
+          : "Cliquez pour rendre ce critère éliminatoire"
+      }
     >
       <span className="elim-toggle__dot" />
       Éliminatoire
@@ -95,93 +102,111 @@ export default function BienForm({ bienId }: { bienId?: number }) {
       <div className="ds-section"><span className="ds-h2">Critères d&apos;éligibilité</span><span className="ds-rule" /></div>
       <div className="ds-card"><div className="ds-card__body">
         <div className="crit-list">
-          <div className="crit-row">
+          {/* Revenus / coût */}
+          <div className="crit-row" data-inactive={!criteres.ratioActif || undefined}>
+            <Toggle checked={criteres.ratioActif} onChange={(v) => setC("ratioActif", v)} />
             <div className="crit-main">
               <p className="crit-text">
                 <span className="crit-name">Revenus/coût du logement</span> : les revenus nets du ménage doivent atteindre au moins
-                <input className="ds-input crit-inline" type="number" step="0.5" value={criteres.ratioMin} onChange={(e) => setC("ratioMin", Number(e.target.value))} />
+                <input className="ds-input crit-inline" type="number" step="0.5" min="0" disabled={!criteres.ratioActif} value={criteres.ratioMin} onChange={(e) => setC("ratioMin", Number(e.target.value))} />
                 fois le loyer et les charges.
               </p>
             </div>
-            <div className="crit-ctrl"><ElimToggle on={criteres.ratioEliminatoire} onChange={(v) => setC("ratioEliminatoire", v)} /></div>
+            <div className="crit-ctrl"><ElimToggle on={criteres.ratioEliminatoire} disabled={!criteres.ratioActif} onChange={(v) => setC("ratioEliminatoire", v)} /></div>
           </div>
 
-          <div className="crit-row">
+          {/* CDI */}
+          <div className="crit-row" data-inactive={!criteres.cdiActif || undefined}>
+            <Toggle checked={criteres.cdiActif} onChange={(v) => setC("cdiActif", v)} />
             <div className="crit-main">
               <p className="crit-text">
                 <span className="crit-name">Présence d&apos;un CDI</span> : le ménage doit compter au moins un contrat à durée indéterminée.
               </p>
             </div>
-            <div className="crit-ctrl"><ElimToggle on={criteres.cdiRequis} onChange={(v) => setC("cdiRequis", v)} /></div>
+            <div className="crit-ctrl"><ElimToggle on={criteres.cdiEliminatoire} disabled={!criteres.cdiActif} onChange={(v) => setC("cdiEliminatoire", v)} /></div>
           </div>
 
-          <div className="crit-row">
+          {/* CDD */}
+          <div className="crit-row" data-inactive={!criteres.cddAccepte || undefined}>
+            <Toggle checked={criteres.cddAccepte} onChange={(v) => setC("cddAccepte", v)} />
             <div className="crit-main">
               <p className="crit-text">
-                <span className="crit-name">CDD acceptés</span> : compter les CDD comme un revenu stable. Sinon, ils sont fortement pénalisés dans la note.
+                <span className="crit-name">CDD acceptés</span> : compter les CDD comme un revenu stable. Désactivé, un CDD est fortement pénalisé dans la note.
               </p>
             </div>
-            <div className="crit-ctrl">
-              <Toggle checked={criteres.cddAccepte} onChange={(v) => setC("cddAccepte", v)} />
-            </div>
+            <div className="crit-ctrl" />
           </div>
 
-          <div className="crit-row">
+          {/* Période d'essai */}
+          <div className="crit-row" data-inactive={!criteres.essaiActif || undefined}>
+            <Toggle checked={criteres.essaiActif} onChange={(v) => setC("essaiActif", v)} />
             <div className="crit-main">
               <p className="crit-text">
-                <span className="crit-name">Période d&apos;essai</span> : écarter le dossier lorsque tout le ménage est en période d&apos;essai en cours.
+                <span className="crit-name">Période d&apos;essai</span> : tenir compte des périodes d&apos;essai en cours dans le ménage.
               </p>
             </div>
-            <div className="crit-ctrl"><ElimToggle on={criteres.essaiEliminatoire} onChange={(v) => setC("essaiEliminatoire", v)} /></div>
+            <div className="crit-ctrl"><ElimToggle on={criteres.essaiEliminatoire} disabled={!criteres.essaiActif} onChange={(v) => setC("essaiEliminatoire", v)} /></div>
           </div>
 
-          <div className="crit-row">
+          {/* Ancienneté */}
+          <div className="crit-row" data-inactive={!criteres.ancienneteActif || undefined}>
+            <Toggle checked={criteres.ancienneteActif} onChange={(v) => setC("ancienneteActif", v)} />
             <div className="crit-main">
               <p className="crit-text">
                 <span className="crit-name">Ancienneté dans l&apos;entreprise</span> : exiger au moins
-                <input className="ds-input crit-inline" type="number" value={criteres.ancienneteMinMois} onChange={(e) => setC("ancienneteMinMois", Number(e.target.value))} />
-                mois d&apos;ancienneté (0 = aucune exigence).
+                <input className="ds-input crit-inline" type="number" min="0" disabled={!criteres.ancienneteActif} value={criteres.ancienneteMinMois} onChange={(e) => setC("ancienneteMinMois", Number(e.target.value))} />
+                mois d&apos;ancienneté.
               </p>
             </div>
+            <div className="crit-ctrl" />
           </div>
         </div>
 
         <p className="ds-hint">
-          La puce <strong>Éliminatoire</strong> en rouge marque un critère qui, s&apos;il n&apos;est pas respecté, plafonne le
-          score à 40 sur 100 et affiche le dossier en rouge. Cliquez dessus pour activer ou désactiver ce caractère
-          éliminatoire. Les critères sans puce rouge pèsent dans la note sans écarter automatiquement le candidat.
+          L&apos;interrupteur de gauche <strong>active</strong> le critère (grisé, il est ignoré dans le calcul). La puce
+          <strong> Éliminatoire</strong> en rouge, elle, rend le critère bloquant : non respecté, il plafonne le score à
+          40 sur 100 et affiche le dossier en rouge. Les critères actifs sans puce rouge pèsent dans la note sans écarter
+          automatiquement le candidat.
         </p>
       </div></div>
 
       {/* Explication de la méthode de calcul */}
-      <div className="ds-section"><span className="ds-h2">Comment le score est calculé</span><span className="ds-rule" /></div>
+      <div className="ds-section"><span className="ds-h2">Comment le score est-il calculé ?</span><span className="ds-rule" /></div>
       <div className="ds-card"><div className="ds-card__body">
-        <p style={{ margin: "0 0 12px", lineHeight: 1.55 }}>
+        <p style={{ margin: "0 0 14px", lineHeight: 1.55 }}>
           Le score va de 0 à 100 points et se répartit sur quatre critères. L&apos;intelligence artificielle se
           contente de lire les documents ; le score, lui, est calculé par un code déterministe, donc un même dossier
           donne toujours le même résultat.
         </p>
-        <ul className="ds-bullets">
-          <li>
-            <strong>Revenus/coût du logement (40 points).</strong> On compare les revenus nets du ménage au montant
-            du loyer et des charges. Le maximum est atteint dès que les revenus atteignent le ratio exigé ci-dessus
-            (par exemple 3 fois le loyer). En dessous, les points diminuent proportionnellement.
-          </li>
-          <li>
-            <strong>Stabilité des contrats (30 points).</strong> Un CDI hors période d&apos;essai vaut le maximum, un
-            CDI en période d&apos;essai un peu moins, puis viennent le CDD et l&apos;intérim. Le résultat est pondéré
-            par le poids salarial de chaque personne du ménage.
-          </li>
-          <li>
-            <strong>Ancienneté dans l&apos;entreprise (15 points).</strong> Les points augmentent par paliers : moins
-            de 6 mois, 6 mois, 1 an, 2 ans, puis 3 ans et plus pour le maximum.
-          </li>
-          <li>
-            <strong>Cohérence du dossier (15 points).</strong> Quatre contrôles croisés vérifient que les documents
-            concordent (nom sur la paie et sur la pièce d&apos;identité, employeur du contrat et des bulletins, salaire
-            du contrat proche des bulletins, bulletins consécutifs et récents). Chaque incohérence retire 5 points.
-          </li>
-        </ul>
+        <div className="score-tbl-wrap">
+          <table className="score-tbl">
+            <thead>
+              <tr><th>Critère</th><th className="score-tbl__pts">Points</th><th>Comment il est calculé</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="score-tbl__crit">Revenus/coût du logement</td>
+                <td className="score-tbl__pts">40</td>
+                <td>Revenus nets du ménage comparés au loyer et aux charges. Maximum dès que le ratio exigé est atteint, proportionnel en dessous.</td>
+              </tr>
+              <tr>
+                <td className="score-tbl__crit">Stabilité des contrats</td>
+                <td className="score-tbl__pts">30</td>
+                <td>CDI hors essai au maximum, puis CDI en essai, CDD et intérim. Pondéré par le salaire de chaque personne.</td>
+              </tr>
+              <tr>
+                <td className="score-tbl__crit">Ancienneté dans l&apos;entreprise</td>
+                <td className="score-tbl__pts">15</td>
+                <td>Par paliers : moins de 6 mois, 6 mois, 1 an, 2 ans, puis 3 ans et plus pour le maximum.</td>
+              </tr>
+              <tr>
+                <td className="score-tbl__crit">Cohérence du dossier</td>
+                <td className="score-tbl__pts">15</td>
+                <td>Quatre contrôles croisés (noms, employeurs, salaires, dates). Chaque incohérence retire 5 points.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div></div>
 
       {err && <div className="ds-error">{err}</div>}

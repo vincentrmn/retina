@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { eur, STATUT_LABELS } from "@/lib/format";
-import type { Score } from "@/lib/types";
+import { normalizeCriteres, type Score } from "@/lib/types";
 
 type CandidatRow = {
   id: number;
@@ -46,15 +46,20 @@ function ScorePill({ score }: { score: Score | null }) {
   );
 }
 
-function criteresLignes(cr: any): string[] {
+function criteresLignes(raw: any): string[] {
+  const cr = normalizeCriteres(raw);
   return [
-    `Revenus nets du ménage exigés : au moins ${cr.ratioMin ?? 3} fois le montant du loyer et des charges${cr.ratioEliminatoire ? " (critère éliminatoire)" : ""}.`,
-    cr.cdiRequis ? "Au moins un CDI est exigé dans le ménage." : "Aucune exigence de CDI.",
+    cr.ratioActif
+      ? `Revenus nets du ménage exigés : au moins ${cr.ratioMin} fois le montant du loyer et des charges${cr.ratioEliminatoire ? " (critère éliminatoire)" : ""}.`
+      : "Aucune exigence de revenus sur ce bien.",
+    cr.cdiActif ? `Au moins un CDI est exigé dans le ménage${cr.cdiEliminatoire ? " (critère éliminatoire)" : ""}.` : "Aucune exigence de CDI.",
     cr.cddAccepte ? "Les CDD sont acceptés comme revenu stable." : "Les CDD sont fortement pénalisés.",
-    cr.essaiEliminatoire
-      ? "Une période d'essai en cours est éliminatoire lorsque tout le ménage est concerné."
-      : "Une période d'essai en cours est pénalisante mais pas éliminatoire.",
-    cr.ancienneteMinMois > 0 ? `Ancienneté minimale exigée dans l'entreprise : ${cr.ancienneteMinMois} mois.` : "Aucune ancienneté minimale exigée.",
+    cr.essaiActif
+      ? cr.essaiEliminatoire
+        ? "Une période d'essai en cours est éliminatoire lorsque tout le ménage est concerné."
+        : "Une période d'essai en cours est pénalisante mais pas éliminatoire."
+      : "Les périodes d'essai ne sont pas prises en compte.",
+    cr.ancienneteActif && cr.ancienneteMinMois > 0 ? `Ancienneté minimale exigée dans l'entreprise : ${cr.ancienneteMinMois} mois.` : "Aucune ancienneté minimale exigée.",
   ];
 }
 

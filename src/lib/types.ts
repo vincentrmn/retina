@@ -7,29 +7,68 @@
 // Bien & critères d'éligibilité (paramétrables par bien)
 // ---------------------------------------------------------------------------
 
+/**
+ * Chaque critère d'éligibilité a un interrupteur « actif » (le critère est-il
+ * pris en compte ?) et, quand c'est pertinent, un caractère « éliminatoire »
+ * (son non-respect plafonne-t-il le score ?).
+ */
 export type Criteres = {
+  /** Le critère revenus/coût est-il appliqué ? (sinon aucune exigence de revenus) */
+  ratioActif: boolean;
   /** Revenus nets du ménage ≥ ratioMin × (loyer + charges). Défaut 3. */
   ratioMin: number;
   /** Le ratio insuffisant est-il éliminatoire (plafonne le score) ? */
   ratioEliminatoire: boolean;
-  /** Au moins un CDI dans le ménage est-il exigé ? */
-  cdiRequis: boolean;
+  /** Le critère « au moins un CDI » est-il appliqué ? */
+  cdiActif: boolean;
+  /** L'absence de CDI est-elle éliminatoire ? */
+  cdiEliminatoire: boolean;
   /** Les CDD sont-ils acceptés comme revenu stable ? (sinon pénalisant) */
   cddAccepte: boolean;
+  /** Le critère période d'essai est-il appliqué ? */
+  essaiActif: boolean;
   /** La période d'essai en cours est-elle éliminatoire ? (sinon pénalisante) */
   essaiEliminatoire: boolean;
-  /** Ancienneté minimale dans l'entreprise, en mois. 0 = pas d'exigence. */
+  /** Le critère d'ancienneté minimale est-il appliqué ? */
+  ancienneteActif: boolean;
+  /** Ancienneté minimale dans l'entreprise, en mois. */
   ancienneteMinMois: number;
 };
 
 export const DEFAULT_CRITERES: Criteres = {
+  ratioActif: true,
   ratioMin: 3,
   ratioEliminatoire: false,
-  cdiRequis: false,
+  cdiActif: false,
+  cdiEliminatoire: false,
   cddAccepte: true,
+  essaiActif: false,
   essaiEliminatoire: false,
+  ancienneteActif: false,
   ancienneteMinMois: 0,
 };
+
+/**
+ * Normalise des critères venus de la base (compatibilité ascendante : les biens
+ * créés avant l'ajout des interrupteurs « actif » n'ont que les anciens champs
+ * `cdiRequis` / `essaiEliminatoire` / `ancienneteMinMois`).
+ */
+export function normalizeCriteres(c: any): Criteres {
+  const cdiRequisOld = c?.cdiRequis; // ancien champ = actif + éliminatoire
+  const anc = Number(c?.ancienneteMinMois ?? 0) || 0;
+  return {
+    ratioActif: c?.ratioActif ?? true,
+    ratioMin: Number(c?.ratioMin ?? 3) || 3,
+    ratioEliminatoire: !!c?.ratioEliminatoire,
+    cdiActif: c?.cdiActif ?? cdiRequisOld ?? false,
+    cdiEliminatoire: c?.cdiEliminatoire ?? cdiRequisOld ?? false,
+    cddAccepte: c?.cddAccepte ?? true,
+    essaiActif: c?.essaiActif ?? c?.essaiEliminatoire ?? false,
+    essaiEliminatoire: !!c?.essaiEliminatoire,
+    ancienneteActif: c?.ancienneteActif ?? anc > 0,
+    ancienneteMinMois: anc,
+  };
+}
 
 export type Bien = {
   id: number;

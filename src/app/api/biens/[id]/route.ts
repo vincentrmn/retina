@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureSchema, pool } from "@/lib/db";
 import { scoreCandidat } from "@/lib/scoring";
-import { DEFAULT_CRITERES, type CoherenceCheck, type SynthesePersonne } from "@/lib/types";
+import { normalizeCriteres, type CoherenceCheck, type SynthesePersonne } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +41,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const adresse = body.adresse != null ? String(body.adresse).trim() : cur.adresse;
     const loyer = body.loyer != null ? Number(body.loyer) : Number(cur.loyer);
     const charges = body.charges != null ? Number(body.charges) : Number(cur.charges);
-    const criteres = { ...DEFAULT_CRITERES, ...cur.criteres, ...(body.criteres ?? {}) };
+    const criteres = normalizeCriteres({ ...cur.criteres, ...(body.criteres ?? {}) });
     await pool.query(
       `UPDATE biens SET adresse=$1, loyer=$2, charges=$3, criteres=$4, updated_at=now() WHERE id=$5`,
       [adresse, loyer, charges, JSON.stringify(criteres), id]
