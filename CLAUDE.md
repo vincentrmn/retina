@@ -189,6 +189,51 @@ uploadés (côté serveur) pour contrôler le coût token des images.
 5. Export PDF par bien.
 6. Calibration sur 2–3 dossiers réels anonymisés avant mise en main de Shawna.
 
+## État d'implémentation (03/07/2026)
+
+**Scaffold complet livré et buildable** (`npm run build` passe). Stack répliquée de VESPER
+(le plus récent des deux) : Next.js 14.2 App Router sous `src/`, CSS maison — `globals.css`
+copié tel quel de Vesper (tokens + primitives `.ds-*` « BBI tools », topbar/brand identiques,
+logo Brouwers) —, Postgres via `pg` + `ensureSchema()` idempotent, mêmes conventions
+(`force-dynamic` sur toute route GET qui touche la DB, try-catch + JSON d'erreur partout).
+
+- **Schéma** (`src/lib/db.ts`) : `biens` (adresse, loyer, charges, `criteres` JSONB) →
+  `candidats` (nom, statut, `synthese`/`coherence`/`score` JSONB) → `documents`
+  (personne A/B, type, fichier en **BYTEA** + `extraction` JSONB brute pour audit).
+  Stockage des documents en base (le fs Railway est éphémère) ; DELETE candidat = CASCADE
+  documents (RGPD).
+- **Extraction** (`src/lib/extract.ts` + `schemas.ts`) : SDK `@anthropic-ai/sdk`,
+  `claude-opus-4-8`, un appel par document, **structured outputs**
+  (`output_config.format` json_schema) — chaque champ = `{value, confiance}`, `value:null`
+  si illisible, jamais inventé. PDF → bloc `document` base64, images → bloc `image`.
+  Adaptive thinking activé (scans sales). ⚠️ SDK ≥ 0.110 requis (`"adaptive"` inconnu des vieux types).
+- **Synthèse + cohérence** (`src/lib/synthese.ts`, code pur) : agrégation par personne
+  (salaire net = moyenne des bulletins, ancienneté, essai…) + 4 contrôles croisés
+  (nom paie↔identité, employeur contrat↔paie, salaire contrat↔paie ±15 %, bulletins
+  consécutifs et < 3 mois).
+- **Scoring** (`src/lib/scoring.ts`, code pur) : 40 ratio (palier ≥ ratioMin) + 30 stabilité
+  (CDI 30 / CDI en essai 22 / CDD 15 ou 8 selon `cddAccepte` / intérim 8, pondérée par
+  salaire) + 15 ancienneté + 15 cohérence (−5 par incohérence). Éliminatoires paramétrables
+  par bien (`ratioEliminatoire`, `cdiRequis`, `essaiEliminatoire` si tout le ménage est en
+  essai) → **score plafonné à 40/100** + affiché en rouge. Testé sur dossier fictif
+  (couple, incohérence de nom détectée, cap éliminatoire vérifié).
+- **Pages** : `/` (biens), `/biens/new` + `/biens/[id]/edit` (formulaire commun
+  `BienForm`), `/biens/[id]` (KPI + candidats classés par score), `/candidats/[id]`
+  (upload par personne/type, bouton Analyser avec spinner, fiche signalétique, cohérence,
+  score détaillé, champs douteux « à vérifier »).
+- **API** : `biens`, `biens/[id]`, `candidats`, `candidats/[id]`,
+  `candidats/[id]/analyze` (extrait les docs manquants → synthèse → score, `{force:true}`
+  pour tout ré-extraire), `documents` (upload multipart 15 Mo max, PDF/JPEG/PNG/WebP),
+  `documents/[id]/file` (sert le scan).
+
+**Reste à faire** :
+1. **Déploiement Railway** (projet + Postgres + `DATABASE_URL`, `ANTHROPIC_API_KEY`,
+   `PGSSL=require`) — calquer `docs/DEPLOY.md` de Vesper.
+2. **Calibration sur 2–3 dossiers réels anonymisés** (qualité d'extraction Opus sur vrais
+   scans + validation du barème avec Shawna) avant mise en main.
+3. **Export PDF par bien** (étape 5 du plan) — non commencé.
+4. Barème/poids à valider avec Shawna (valeurs actuelles = barème indicatif du §Étage 2).
+
 ## Conventions pour Claude Code
 
 - Développer sur la branche désignée de la session ; ne jamais pousser ailleurs.

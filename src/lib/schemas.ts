@@ -1,0 +1,97 @@
+import type { DocType } from "./types";
+
+/**
+ * Schémas JSON (structured outputs) par type de document.
+ * Chaque champ = { value, confiance } : le modèle donne la valeur ET son
+ * niveau de confiance. Un champ absent ou illisible => value null — jamais
+ * inventé. Contraintes structured outputs : additionalProperties:false et
+ * required exhaustif sur chaque objet.
+ */
+
+type Json = Record<string, unknown>;
+
+const CONFIANCE = { type: "string", enum: ["haute", "moyenne", "basse"] };
+
+function champ(type: "string" | "number" | "boolean", description: string, enumValues?: string[]): Json {
+  const valueSchema: Json = enumValues
+    ? { anyOf: [{ type, enum: enumValues }, { type: "null" }] }
+    : { anyOf: [{ type }, { type: "null" }] };
+  return {
+    type: "object",
+    description,
+    properties: { value: valueSchema, confiance: CONFIANCE },
+    required: ["value", "confiance"],
+    additionalProperties: false,
+  };
+}
+
+function objet(properties: Record<string, Json>): Json {
+  return {
+    type: "object",
+    properties: {
+      ...properties,
+      remarques: {
+        anyOf: [{ type: "string" }, { type: "null" }],
+        description: "Anomalies ou particularités notées sur le document (ratures, qualité, mentions inhabituelles). null si rien à signaler.",
+      },
+    },
+    required: [...Object.keys(properties), "remarques"],
+    additionalProperties: false,
+  };
+}
+
+export const SCHEMA_PAIE = objet({
+  nom_complet: champ("string", "Nom complet du salarié tel qu'imprimé sur le bulletin"),
+  employeur: champ("string", "Nom de l'employeur / raison sociale"),
+  periode: champ("string", "Période du bulletin au format YYYY-MM"),
+  salaire_net_mensuel: champ("number", "Salaire NET mensuel en euros (net à payer avant impôt si distinction, sinon net à payer)"),
+  salaire_brut_mensuel: champ("number", "Salaire BRUT mensuel en euros"),
+  intitule_poste: champ("string", "Intitulé du poste / fonction si présent"),
+  date_entree: champ("string", "Date d'entrée / d'ancienneté dans l'entreprise au format YYYY-MM-DD (souvent en en-tête du bulletin)"),
+});
+
+export const SCHEMA_CONTRAT = objet({
+  nom_complet: champ("string", "Nom complet du salarié"),
+  employeur: champ("string", "Nom de l'employeur / raison sociale"),
+  type_contrat: champ("string", "Type de contrat", ["CDI", "CDD", "interim", "independant", "autre"]),
+  date_debut: champ("string", "Date de début du contrat, YYYY-MM-DD"),
+  date_fin: champ("string", "Date de fin (CDD/intérim), YYYY-MM-DD. null si CDI"),
+  periode_essai: champ("boolean", "Le contrat prévoit-il une période d'essai ?"),
+  fin_periode_essai: champ("string", "Date de fin de la période d'essai, YYYY-MM-DD, si calculable depuis le contrat"),
+  salaire_mensuel: champ("number", "Salaire mensuel indiqué au contrat, en euros"),
+  salaire_est_brut: champ("boolean", "true si le salaire du contrat est exprimé en BRUT"),
+  intitule_poste: champ("string", "Intitulé du poste"),
+});
+
+export const SCHEMA_IDENTITE = objet({
+  nom: champ("string", "Nom de famille"),
+  prenom: champ("string", "Prénom(s)"),
+  date_naissance: champ("string", "Date de naissance, YYYY-MM-DD"),
+  nationalite: champ("string", "Nationalité"),
+  type_document: champ("string", "Type de pièce", ["carte_identite", "passeport", "titre_sejour", "autre"]),
+  date_expiration: champ("string", "Date d'expiration du document, YYYY-MM-DD"),
+});
+
+export const SCHEMAS: Record<DocType, Json> = {
+  fiche_paie: SCHEMA_PAIE,
+  contrat: SCHEMA_CONTRAT,
+  piece_identite: SCHEMA_IDENTITE,
+};
+
+export const PROMPTS: Record<DocType, string> = {
+  fiche_paie:
+    "Ce document est une fiche de paie (bulletin de salaire), possiblement un scan de qualité variable. " +
+    "Extrais les informations demandées. Règles strictes : n'invente JAMAIS une valeur — si un champ est absent, " +
+    "illisible ou douteux, mets value=null ou baisse la confiance. Les montants sont en euros ; convertis les " +
+    "formats locaux (1.234,56 ou 1 234,56 → 1234.56). Si le bulletin couvre une période non mensuelle, ramène " +
+    "les salaires au mensuel et signale-le en remarques.",
+  contrat:
+    "Ce document est un contrat de travail (possiblement plusieurs pages, scan de qualité variable). " +
+    "Extrais les informations demandées. Règles strictes : n'invente JAMAIS une valeur — si un champ est absent " +
+    "ou illisible, mets value=null ou baisse la confiance. Pour la période d'essai : si une durée est indiquée, " +
+    "calcule la date de fin depuis la date de début. Ne déduis pas le type de contrat s'il n'est pas explicite.",
+  piece_identite:
+    "Ce document est une pièce d'identité (carte d'identité, passeport ou titre de séjour), possiblement un scan " +
+    "ou une photo. Extrais les informations demandées. Règles strictes : n'invente JAMAIS une valeur — si un champ " +
+    "est absent ou illisible, mets value=null ou baisse la confiance. Attention à l'ordre nom/prénom selon le pays.",
+};
