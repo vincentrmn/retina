@@ -243,14 +243,23 @@ logo Brouwers) —, Postgres via `pg` + `ensureSchema()` idempotent, mêmes conv
 - Flux complet testé end-to-end en local (Postgres 16 local) : bien → candidat → upload 3
   vrais PDF → analyse 19 s → score 55/100 cohérent (bulletins 2024 signalés trop vieux).
 
+**Déploiement Railway — FAIT (03/07/2026), testé end-to-end en prod** :
+- **URL : https://retina-production-6d72.up.railway.app** (un 2ᵉ domaine `retina-production-9985`
+  existe aussi, généré en double — sans conséquence). Analyse d'un dossier réel en prod : 21 s,
+  score identique au local.
+- Projet `charming-vibrancy` (`de11fb07-1f08-4e60-b5f5-c57a855a5399`), env `production`
+  (`28421880-…`), services `retina` (`f35c7920-…`, repo GitHub branche `main`, auto-deploy)
+  et `Postgres` (`1d39e419-…`).
+- Variables posées sur `retina` : `DATABASE_URL = ${{Postgres.DATABASE_URL}}`,
+  `ANTHROPIC_API_KEY` (clé dédiée au projet, doc « Clé API » du Drive), `PGSSL = require`.
+- Pilotage Railway depuis Claude **en GraphQL direct** (`backboard.railway.com`,
+  `Authorization: Bearer <workspace token>`) — même méthode que Vesper ; la CLI/MCP
+  rejettent ce token. Le token n'est PAS stocké : le redemander à Vincent au besoin.
+
 **Reste à faire** :
-1. **Déploiement Railway** : projet `charming-vibrancy` créé par Vincent (service repo retina
-   + Postgres). À poser sur le service : `DATABASE_URL = ${{Postgres.DATABASE_URL}}`,
-   `ANTHROPIC_API_KEY` (clé dédiée au projet, doc « Clé API » du Drive), `PGSSL = require` ;
-   générer le domaine public. Déploie `main` à chaque push.
-2. **Calibration élargie** (autres dossiers réels du Drive) + validation du barème avec Shawna.
-3. **Export PDF par bien** (étape 5 du plan) — non commencé.
-4. Barème/poids à valider avec Shawna (valeurs actuelles = barème indicatif du §Étage 2).
+1. **Calibration élargie** (autres dossiers réels du Drive) + validation du barème avec Shawna.
+2. **Export PDF par bien** (étape 5 du plan) — non commencé.
+3. Barème/poids à valider avec Shawna (valeurs actuelles = barème indicatif du §Étage 2).
 
 ## Conventions pour Claude Code
 
