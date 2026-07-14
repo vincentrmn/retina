@@ -56,23 +56,104 @@ type DocsByType = {
   identite: ExtractionIdentite | null;
 };
 
-function groupDocs(docs: DocumentMeta[], p: Personne): DocsByType {
-  const mine = docs.filter((d) => d.personne === p && d.extraction_status === "done" && d.extraction);
-  return {
-    paies: mine
-      .filter((d) => d.type === "fiche_paie")
-      .flatMap((d) => (d.extraction as ExtractionPaie).bulletins ?? []),
-    contrat: (mine.find((d) => d.type === "contrat")?.extraction as ExtractionContrat) ?? null,
-    identite: (mine.find((d) => d.type === "piece_identite")?.extraction as ExtractionIdentite) ?? null,
+// ---------------------------------------------------------------------------
+// Répartition A/B au niveau de chaque document EXTRAIT (pas du fichier).
+// Un fichier « dossier » peut contenir plusieurs documents et plusieurs
+// personnes : on aplatit tout en « items » puis on regroupe par nom. Gère aussi
+// bien « un scan par personne » (tous les items portent le même nom) que « un
+// scan pour tout le couple » (les items se répartissent sur deux noms).
+// ---------------------------------------------------------------------------
+
+type RawItem = { kind: "paie" | "contrat" | "identite"; nom: string | null; forced: Personne | null; data: any };
+
+function nomOfIdentite(i: ExtractionIdentite): string | null {
+  return [val(i.prenom), val(i.nom)].filter(Boolean).join(" ") || null;
+}
+
+function itemsOfDoc(d: DocumentMeta): RawItem[] {
+  if (d.extraction_status !== "done" || !d.extraction) return [];
+  const e: any = d.extraction;
+  // Fichier « dossier » = possiblement plusieurs personnes → jamais de forçage
+  // par fichier. Un document typé (legacy) peut, lui, être forcé à la main (A/B).
+  const forced: Personne | null = d.type !== "dossier" && (d.personne === "A" || d.personne === "B") ? d.personne : null;
+  const out: RawItem[] = [];
+  const addPaie = (b: BulletinPaie) => out.push({ kind: "paie", nom: val(b.nom_complet), forced, data: b });
+  const addContrat = (c: ExtractionContrat) => out.push({ kind: "contrat", nom: val(c.nom_complet), forced, data: c });
+  const addId = (i: ExtractionIdentite) => out.push({ kind: "identite", nom: nomOfIdentite(i), forced, data: i });
+  switch (d.type) {
+    case "fiche_paie": (e.bulletins ?? []).forEach(addPaie); break;
+    case "contrat": addContrat(e as ExtractionContrat); break;
+    case "piece_identite": addId(e as ExtractionIdentite); break;
+    case "dossier":
+      (e.fiches_de_paie ?? []).forEach(addPaie);
+      (e.contrats ?? []).forEach(addContrat);
+      (e.pieces_identite ?? []).forEach(addId);
+      break;
+  }
+  return out;
+}
+
+/** Attribue chaque item à A ou B (regroupement par nom, forçage manuel prioritaire). */
+function assignItems(items: RawItem[]): (Personne | null)[] {
+  type Cluster = { noms: string[]; lettre: Personne | null; idx: number[] };
+  const clusters: Cluster[] = [];
+  items.forEach((it, i) => {
+    if (!it.nom) return;
+    let c = clusters.find((x) => x.noms.some((n) => sameEntity(n, it.nom)));
+    if (!c) { c = { noms: [], lettre: null, idx: [] }; clusters.push(c); }
+    c.noms.push(it.nom);
+    c.idx.push(i);
+    if (it.forced) c.lettre = c.lettre ?? it.forced;
+  });
+  const prises = new Set(clusters.map((c) => c.lettre).filter(Boolean) as Personne[]);
+  for (const c of clusters) {
+    if (c.lettre) continue;
+    const libre = (["A", "B"] as Personne[]).find((l) => !prises.has(l));
+    if (!libre) break; // plus de 2 personnes : les suivantes restent non attribuées
+    c.lettre = libre;
+    prises.add(libre);
+  }
+  const res: (Personne | null)[] = items.map(() => null);
+  for (const c of clusters) for (const i of c.idx) if (c.lettre) res[i] = c.lettre;
+  // Items sans nom lisible : forçage d'abord ; sinon, s'il n'y a qu'une personne
+  // dans le dossier, on les lui rattache (sinon on ne peut pas trancher).
+  const lettres = [...prises];
+  items.forEach((it, i) => {
+    if (res[i]) return;
+    if (it.forced) { res[i] = it.forced; return; }
+    if (!it.nom) {
+      if (lettres.length === 1) res[i] = lettres[0];
+      else if (clusters.length === 0) res[i] = "A";
+    }
+  });
+  return res;
+}
+
+function partitionByPerson(docs: DocumentMeta[]): Record<Personne, DocsByType> {
+  const items = docs.flatMap(itemsOfDoc);
+  const who = assignItems(items);
+  const buckets: Record<Personne, DocsByType> = {
+    A: { paies: [], contrat: null, identite: null },
+    B: { paies: [], contrat: null, identite: null },
   };
+  items.forEach((it, i) => {
+    const p = who[i];
+    if (!p) return;
+    const bk = buckets[p];
+    if (it.kind === "paie") bk.paies.push(it.data);
+    else if (it.kind === "contrat") bk.contrat = bk.contrat ?? it.data;
+    else if (it.kind === "identite") bk.identite = bk.identite ?? it.data;
+  });
+  return buckets;
 }
 
 export function buildSynthese(docs: DocumentMeta[], now = new Date()): SynthesePersonne[] {
   const personnes: Personne[] = ["A", "B"];
+  const parts = partitionByPerson(docs);
   const out: SynthesePersonne[] = [];
 
   for (const p of personnes) {
-    const { paies, contrat, identite } = groupDocs(docs, p);
+    const { paies, contrat, identite } = parts[p];
     if (!paies.length && !contrat && !identite) continue;
 
     const aVerifier: string[] = [];
@@ -142,9 +223,10 @@ function money(n: number): string {
 export function buildCoherence(docs: DocumentMeta[], now = new Date()): CoherenceCheck[] {
   const checks: CoherenceCheck[] = [];
   const personnes: Personne[] = ["A", "B"];
+  const parts = partitionByPerson(docs);
 
   for (const p of personnes) {
-    const { paies, contrat, identite } = groupDocs(docs, p);
+    const { paies, contrat, identite } = parts[p];
     if (!paies.length && !contrat && !identite) continue;
 
     // 1. Nom sur la fiche de paie == nom sur la pièce d'identité
@@ -241,81 +323,17 @@ export function buildCoherence(docs: DocumentMeta[], now = new Date()): Coherenc
 }
 
 // ---------------------------------------------------------------------------
-// Rattachement automatique des documents aux personnes A/B (upload en batch)
-// ---------------------------------------------------------------------------
-
-/** Nom lisible sur un document extrait (sert au regroupement par personne). */
-export function nomDuDoc(d: DocumentMeta): string | null {
-  if (d.extraction_status !== "done" || !d.extraction) return null;
-  if (d.type === "fiche_paie") {
-    const b = (d.extraction as ExtractionPaie).bulletins ?? [];
-    return b.map((x) => val(x.nom_complet)).find((v) => v) ?? null;
-  }
-  if (d.type === "contrat") return val((d.extraction as ExtractionContrat).nom_complet);
-  if (d.type === "piece_identite") {
-    const i = d.extraction as ExtractionIdentite;
-    return [val(i.prenom), val(i.nom)].filter(Boolean).join(" ") || null;
-  }
-  return null;
-}
-
-/**
- * Regroupe les documents par personne à partir des noms extraits. Les docs
- * déjà rattachés (A/B) ancrent leur groupe ; les docs `?` rejoignent le
- * groupe dont le nom correspond, ou ouvrent un nouveau groupe (A puis B).
- * Retourne la liste { docId, personne } des rattachements à écrire.
- */
-export function assignPersonnes(docs: DocumentMeta[]): { docId: number; personne: Personne }[] {
-  type Groupe = { noms: string[]; lettre: Personne | null; docIds: number[] };
-  const groupes: Groupe[] = [];
-  const ordered = [...docs].sort((a, b) => a.id - b.id);
-
-  for (const d of ordered) {
-    const nom = nomDuDoc(d);
-    if (!nom) continue; // sans nom lisible : reste tel quel
-    let g = groupes.find((x) => x.noms.some((n) => sameEntity(n, nom)));
-    if (!g) {
-      g = { noms: [], lettre: null, docIds: [] };
-      groupes.push(g);
-    }
-    g.noms.push(nom);
-    g.docIds.push(d.id);
-    if (d.personne === "A" || d.personne === "B") g.lettre = g.lettre ?? d.personne;
-  }
-
-  // Attribue les lettres libres aux groupes sans ancre, dans l'ordre d'apparition.
-  const prises = new Set(groupes.map((g) => g.lettre).filter(Boolean) as Personne[]);
-  for (const g of groupes) {
-    if (g.lettre) continue;
-    const libre = (["A", "B"] as Personne[]).find((l) => !prises.has(l));
-    if (!libre) break; // plus de 2 personnes détectées : on laisse en `?`
-    g.lettre = libre;
-    prises.add(libre);
-  }
-
-  const out: { docId: number; personne: Personne }[] = [];
-  for (const g of groupes) {
-    if (!g.lettre) continue;
-    for (const id of g.docIds) {
-      const d = docs.find((x) => x.id === id)!;
-      if (d.personne === "?") out.push({ docId: id, personne: g.lettre });
-    }
-  }
-  return out;
-}
-
-// ---------------------------------------------------------------------------
 // Complétude du dossier (check après analyse)
 // ---------------------------------------------------------------------------
 
 export function buildCompletude(docs: DocumentMeta[], now = new Date()): CompletudeItem[] {
   const items: CompletudeItem[] = [];
   const personnes: Personne[] = ["A", "B"];
+  const parts = partitionByPerson(docs);
 
   for (const p of personnes) {
-    const { paies, contrat, identite } = groupDocs(docs, p);
-    const desDocs = docs.some((d) => d.personne === p);
-    if (!desDocs && !paies.length) continue;
+    const { paies, contrat, identite } = parts[p];
+    if (!paies.length && !contrat && !identite) continue;
 
     // Pièce d'identité
     items.push({
@@ -358,16 +376,7 @@ export function buildCompletude(docs: DocumentMeta[], now = new Date()): Complet
     items.push({ personne: p, label: "3 derniers bulletins de salaire", statut, detail });
   }
 
-  // Documents non rattachés ou non reconnus
-  const orphelins = docs.filter((d) => d.personne === "?" && d.extraction_status === "done");
-  if (orphelins.length) {
-    items.push({
-      personne: "?",
-      label: "Documents à rattacher",
-      statut: "partiel",
-      detail: `${orphelins.length} document${orphelins.length > 1 ? "s" : ""} sans personne identifiée (choisir A ou B à la main)`,
-    });
-  }
+  // Documents non reconnus (aucun document exploitable trouvé dans le fichier)
   const inconnus = docs.filter((d) => d.type === "autre");
   if (inconnus.length) {
     items.push({

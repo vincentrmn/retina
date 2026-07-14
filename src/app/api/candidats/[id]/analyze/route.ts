@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureSchema, pool } from "@/lib/db";
 import { extractDocument, extractDocumentAuto, hasAnthropicKey } from "@/lib/extract";
-import { assignPersonnes, buildCoherence, buildCompletude, buildSynthese } from "@/lib/synthese";
+import { buildCoherence, buildCompletude, buildSynthese } from "@/lib/synthese";
 import { scoreCandidat } from "@/lib/scoring";
 import type { DocType, DocumentMeta } from "@/lib/types";
 
@@ -92,15 +92,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       );
     }
 
-    // Rattachement automatique des documents `?` aux personnes A/B (par nom).
-    const afterExtract = await pool.query(
-      `SELECT ${DOC_COLUMNS} FROM documents WHERE candidat_id = $1`,
-      [id]
-    );
-    for (const a of assignPersonnes(afterExtract.rows as DocumentMeta[])) {
-      await pool.query(`UPDATE documents SET personne = $1 WHERE id = $2`, [a.personne, a.docId]);
-    }
-
+    // Le rattachement A/B est calculé par la synthèse (au niveau de chaque
+    // document extrait, par le nom) — plus besoin de le figer sur les lignes.
     const all = await pool.query(`SELECT ${DOC_COLUMNS} FROM documents WHERE candidat_id = $1`, [id]);
     const meta = all.rows as DocumentMeta[];
     const synthese = buildSynthese(meta);

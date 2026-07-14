@@ -12,6 +12,9 @@ type Json = Record<string, unknown>;
 
 const CONFIANCE = { type: "string", enum: ["haute", "moyenne", "basse"] };
 
+const SANS_CADRATIN =
+  " Dans les remarques, pas de tiret cadratin ni demi-cadratin : ponctue avec des virgules, points ou deux-points.";
+
 function champ(type: "string" | "number" | "boolean", description: string, enumValues?: string[]): Json {
   const valueSchema: Json = enumValues
     ? { anyOf: [{ type, enum: enumValues }, { type: "null" }] }
@@ -64,7 +67,7 @@ export const SCHEMA_PAIE = objet({
   },
 });
 
-export const SCHEMA_CONTRAT = objet({
+const CONTRAT_PROPS: Record<string, Json> = {
   nom_complet: champ("string", "Nom complet du salarié"),
   employeur: champ("string", "Nom de l'employeur / raison sociale"),
   type_contrat: champ("string", "Type de contrat", ["CDI", "CDD", "interim", "independant", "autre"]),
@@ -75,21 +78,87 @@ export const SCHEMA_CONTRAT = objet({
   salaire_mensuel: champ("number", "Salaire mensuel indiqué au contrat, en euros"),
   salaire_est_brut: champ("boolean", "true si le salaire du contrat est exprimé en BRUT"),
   intitule_poste: champ("string", "Intitulé du poste"),
-});
+};
 
-export const SCHEMA_IDENTITE = objet({
+const IDENTITE_PROPS: Record<string, Json> = {
   nom: champ("string", "Nom de famille"),
   prenom: champ("string", "Prénom(s)"),
   date_naissance: champ("string", "Date de naissance, YYYY-MM-DD"),
   nationalite: champ("string", "Nationalité"),
   type_document: champ("string", "Type de pièce", ["carte_identite", "passeport", "titre_sejour", "autre"]),
   date_expiration: champ("string", "Date d'expiration du document, YYYY-MM-DD"),
+};
+
+export const SCHEMA_CONTRAT = objet(CONTRAT_PROPS);
+export const SCHEMA_IDENTITE = objet(IDENTITE_PROPS);
+
+/** Versions « item de tableau » (sans remarques) pour l'extraction dossier. */
+function itemObjet(properties: Record<string, Json>): Json {
+  return { type: "object", properties, required: Object.keys(properties), additionalProperties: false };
+}
+const CONTRAT_ITEM = itemObjet(CONTRAT_PROPS);
+const IDENTITE_ITEM = itemObjet(IDENTITE_PROPS);
+
+/** Un fichier peut contenir PLUSIEURS contrats / pièces (couple) → tableaux. */
+export const SCHEMA_CONTRATS = objet({
+  contrats: { type: "array", description: "Un élément PAR contrat de travail présent dans le document (toutes personnes confondues).", items: CONTRAT_ITEM },
+});
+export const SCHEMA_IDENTITES = objet({
+  pieces_identite: { type: "array", description: "Un élément PAR pièce d'identité présente dans le document (toutes personnes confondues).", items: IDENTITE_ITEM },
 });
 
 export const SCHEMAS: Record<DocType, Json> = {
   fiche_paie: SCHEMA_PAIE,
   contrat: SCHEMA_CONTRAT,
   piece_identite: SCHEMA_IDENTITE,
+};
+
+/** Schémas « tableau » par type, pour l'extraction d'un fichier dossier. */
+export const SCHEMAS_MULTI: Record<DocType, Json> = {
+  fiche_paie: SCHEMA_PAIE,
+  contrat: SCHEMA_CONTRATS,
+  piece_identite: SCHEMA_IDENTITES,
+};
+
+/**
+ * Étape 1 de l'extraction dossier (Haiku) : quels types de documents le fichier
+ * contient-il ? Schéma minuscule (3 booléens, aucune union). On n'extrait
+ * ensuite (Opus) que les types présents.
+ */
+export const SCHEMA_TYPES_PRESENTS: Json = {
+  type: "object",
+  properties: {
+    fiche_paie: { type: "boolean", description: "Le fichier contient au moins une fiche de paie (bulletin de salaire) ?" },
+    contrat: { type: "boolean", description: "Le fichier contient au moins un contrat de travail ?" },
+    piece_identite: { type: "boolean", description: "Le fichier contient au moins une pièce d'identité (CNI, passeport, titre de séjour) ?" },
+  },
+  required: ["fiche_paie", "contrat", "piece_identite"],
+  additionalProperties: false,
+};
+
+export const PROMPT_TYPES_PRESENTS =
+  "Ce fichier fait partie d'un dossier de candidature à la location. Il peut contenir UN SEUL document ou PLUSIEURS " +
+  "documents différents dans le même scan (par exemple des fiches de paie, un contrat de travail et une pièce " +
+  "d'identité à la suite), éventuellement pour deux personnes. Indique, pour chaque type, s'il est présent au moins " +
+  "une fois dans le fichier.";
+
+/** Prompts « tableau » (tous les documents du type dans le fichier, toutes personnes). */
+export const PROMPTS_MULTI: Record<DocType, string> = {
+  fiche_paie:
+    "Ce fichier contient une ou plusieurs fiches de paie (bulletins de salaire), possiblement pour DEUX personnes " +
+    "différentes et sur plusieurs mois, en scans de qualité variable. Produis un élément de `bulletins` PAR bulletin " +
+    "présent, en conservant le nom exact du salarié de chaque bulletin (c'est lui qui permet de rattacher le bulletin " +
+    "à la bonne personne). N'invente JAMAIS une valeur : champ absent ou illisible => value=null ou confiance basse. " +
+    "Montants en euros (1.234,56 ou 1 234,56 => 1234.56)." + SANS_CADRATIN,
+  contrat:
+    "Ce fichier peut contenir un ou plusieurs contrats de travail (parfois deux personnes), en scans de qualité " +
+    "variable. Produis un élément de `contrats` PAR contrat présent, avec le nom exact du salarié de chaque contrat. " +
+    "N'invente JAMAIS une valeur. Pour la période d'essai, calcule la date de fin depuis la date de début si une durée " +
+    "est indiquée. Ne déduis pas le type de contrat s'il n'est pas explicite." + SANS_CADRATIN,
+  piece_identite:
+    "Ce fichier peut contenir une ou plusieurs pièces d'identité (parfois deux personnes), en scans ou photos. Produis " +
+    "un élément de `pieces_identite` PAR pièce présente, avec nom et prénom exacts. N'invente JAMAIS une valeur. " +
+    "Attention à l'ordre nom/prénom selon le pays." + SANS_CADRATIN,
 };
 
 /**
@@ -112,9 +181,6 @@ export const SCHEMA_CLASSIFICATION: Json = {
   additionalProperties: false,
 };
 
-
-const SANS_CADRATIN =
-  " Dans les remarques, pas de tiret cadratin ni demi-cadratin : ponctue avec des virgules, points ou deux-points.";
 
 export const PROMPTS: Record<DocType, string> = {
   fiche_paie:

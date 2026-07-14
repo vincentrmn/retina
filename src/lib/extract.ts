@@ -1,6 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROMPT_CLASSIFICATION, PROMPTS, SCHEMA_CLASSIFICATION, SCHEMAS } from "./schemas";
-import type { DocType, Extraction } from "./types";
+import {
+  PROMPT_TYPES_PRESENTS,
+  PROMPTS,
+  PROMPTS_MULTI,
+  SCHEMA_TYPES_PRESENTS,
+  SCHEMAS,
+  SCHEMAS_MULTI,
+} from "./schemas";
+import type { BulletinPaie, DocType, Extraction, ExtractionContrat, ExtractionDossier, ExtractionIdentite } from "./types";
 
 /**
  * Étage 1 — extraction (Claude API). Un appel par document, structured
@@ -73,21 +80,41 @@ export async function extractDocument(type: DocType, mime: string, content: Buff
   return sansCadratin((await callModel(mime, content, SCHEMAS[type], PROMPTS[type])) as Extraction);
 }
 
-/** Classification rapide du type de document (Haiku : la tâche est facile). */
+/** Détection rapide des types présents (Haiku : la tâche est facile). */
 const MODEL_CLASSIFICATION = "claude-haiku-4-5";
 
 /**
- * Extraction AUTO (upload en batch) en deux temps : classification du type
- * par un modèle rapide, puis extraction typée par Opus. Un schéma unique
- * type+extraction dépasse la limite API des paramètres à union.
+ * Extraction AUTO d'un fichier « dossier » (upload en batch). Un même scan peut
+ * contenir PLUSIEURS documents (fiches de paie + contrat + pièce d'identité),
+ * éventuellement pour deux personnes. En deux temps :
+ *  1. Haiku détecte quels types sont présents (schéma minuscule, sans union) ;
+ *  2. Opus extrait, EN PARALLÈLE, chaque type présent avec son schéma « tableau »
+ *     (réutilise les schémas éprouvés, un par appel : pas de schéma géant qui
+ *     dépasserait la limite API des paramètres à union).
+ * Retour : `type='dossier'` + les trois tableaux (vides si le type est absent),
+ * ou `type='autre'` si le fichier ne contient aucun document exploitable.
  */
 export async function extractDocumentAuto(
   mime: string,
   content: Buffer
-): Promise<{ type: DocType | "autre"; extraction: Extraction | null }> {
-  const cls = (await callModel(mime, content, SCHEMA_CLASSIFICATION, PROMPT_CLASSIFICATION, MODEL_CLASSIFICATION)) as {
-    type_detecte: DocType | "autre";
+): Promise<{ type: "dossier" | "autre"; extraction: ExtractionDossier | null }> {
+  const present = (await callModel(mime, content, SCHEMA_TYPES_PRESENTS, PROMPT_TYPES_PRESENTS, MODEL_CLASSIFICATION)) as {
+    fiche_paie: boolean;
+    contrat: boolean;
+    piece_identite: boolean;
   };
-  if (cls.type_detecte === "autre") return { type: "autre", extraction: null };
-  return { type: cls.type_detecte, extraction: await extractDocument(cls.type_detecte, mime, content) };
+  const types = (["fiche_paie", "contrat", "piece_identite"] as DocType[]).filter((t) => present[t]);
+  if (!types.length) return { type: "autre", extraction: null };
+
+  const results = await Promise.all(
+    types.map((t) => callModel(mime, content, SCHEMAS_MULTI[t], PROMPTS_MULTI[t]).then((r) => [t, r] as const))
+  );
+  const by = Object.fromEntries(results) as Partial<Record<DocType, any>>;
+
+  const extraction: ExtractionDossier = sansCadratin({
+    fiches_de_paie: (by.fiche_paie?.bulletins ?? []) as BulletinPaie[],
+    contrats: (by.contrat?.contrats ?? []) as ExtractionContrat[],
+    pieces_identite: (by.piece_identite?.pieces_identite ?? []) as ExtractionIdentite[],
+  });
+  return { type: "dossier", extraction };
 }

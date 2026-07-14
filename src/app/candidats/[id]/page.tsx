@@ -117,9 +117,24 @@ function DropZone({ candidatId, onDone }: { candidatId: number; onDone: () => vo
 
 const TYPE_LABEL: Record<string, string> = {
   ...DOC_TYPE_LABELS,
-  auto: "Type reconnu à l'analyse",
-  autre: "Document non reconnu",
+  auto: "À analyser",
+  autre: "Aucun document reconnu",
+  dossier: "Dossier",
 };
+
+/** Résumé du contenu d'un fichier « dossier » (plusieurs documents en un scan). */
+function dossierResume(d: DocumentMeta): string | null {
+  if (d.type !== "dossier" || !d.extraction) return null;
+  const e = d.extraction as any;
+  const np = (e.fiches_de_paie ?? []).length;
+  const nc = (e.contrats ?? []).length;
+  const ni = (e.pieces_identite ?? []).length;
+  const parts: string[] = [];
+  if (np) parts.push(`${np} fiche${np > 1 ? "s" : ""} de paie`);
+  if (nc) parts.push(`${nc} contrat${nc > 1 ? "s" : ""}`);
+  if (ni) parts.push(`${ni} pièce${ni > 1 ? "s" : ""} d'identité`);
+  return parts.length ? parts.join(", ") : null;
+}
 
 const COMPLETUDE_DOT: Record<CompletudeItem["statut"], string> = {
   ok: "ds-dot",
@@ -237,27 +252,34 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
         {cand.documents.length === 0 && <p className="ds-muted" style={{ margin: 0 }}>Aucun document déposé pour l&apos;instant.</p>}
         {cand.documents.length > 0 && (
           <p className="ds-hint" style={{ marginTop: 0 }}>
-            Le type de chaque document et la personne concernée (A ou B) sont déterminés automatiquement lors de
-            l&apos;analyse. Une fois l&apos;analyse faite, si un document a été attribué à la mauvaise personne,
-            cliquez sur son badge <strong>A</strong> ou <strong>B</strong> pour le corriger.
+            À l&apos;analyse, RETINA reconnaît le contenu de chaque fichier — y compris un seul gros scan qui
+            regroupe plusieurs documents (fiches de paie, contrat, pièce d&apos;identité) — et rattache chaque
+            document à la bonne personne (A ou B) d&apos;après le nom qui y figure.
           </p>
         )}
         {cand.documents.map((d) => {
-          const attribuee = d.personne === "A" || d.personne === "B";
+          // Fichier « dossier » = un scan avec plusieurs documents (et parfois
+          // plusieurs personnes) : on affiche son contenu, sans badge A/B (le
+          // rattachement se fait par le nom, document par document). Les anciens
+          // documents typés gardent leur badge A/B corrigeable.
+          const resume = dossierResume(d);
+          const attribuee = d.type !== "dossier" && (d.personne === "A" || d.personne === "B");
+          const legacyTyped = d.type === "fiche_paie" || d.type === "contrat" || d.type === "piece_identite";
           return (
             <div className="ds-kv doc-row" key={d.id}>
               <span className="ds-kv__k" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 <DocStatus d={d} />
-                {attribuee ? (
-                  <button
-                    className="doc-person"
-                    title="Cliquez pour attribuer ce document à l'autre personne"
-                    onClick={() => changerPersonne(d)}
-                  >{d.personne}</button>
-                ) : (
-                  <span className="doc-person doc-person--auto" title="La personne sera déterminée à l'analyse">?</span>
-                )}
-                {TYPE_LABEL[d.type] ?? d.type}
+                {legacyTyped &&
+                  (attribuee ? (
+                    <button
+                      className="doc-person"
+                      title="Cliquez pour attribuer ce document à l'autre personne"
+                      onClick={() => changerPersonne(d)}
+                    >{d.personne}</button>
+                  ) : (
+                    <span className="doc-person doc-person--auto" title="La personne sera déterminée à l'analyse">?</span>
+                  ))}
+                {resume ? `${TYPE_LABEL.dossier} · ${resume}` : TYPE_LABEL[d.type] ?? d.type}
               </span>
               <span className="ds-kv__v" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 <a href={`/api/documents/${d.id}/file`} target="_blank" rel="noreferrer" title={d.filename}>

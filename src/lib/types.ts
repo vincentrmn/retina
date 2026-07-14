@@ -85,8 +85,12 @@ export type Bien = {
 // ---------------------------------------------------------------------------
 
 export type DocType = "fiche_paie" | "contrat" | "piece_identite";
-/** Type stocké en base : `auto` avant extraction, `autre` si non reconnu. */
-export type DocTypeStocke = DocType | "auto" | "autre";
+/**
+ * Type stocké en base : `auto` avant extraction, `autre` si non reconnu,
+ * `dossier` = un seul fichier contenant plusieurs documents (paie + contrat +
+ * pièce d'identité, éventuellement pour plusieurs personnes).
+ */
+export type DocTypeStocke = DocType | "auto" | "autre" | "dossier";
 export type Personne = "A" | "B";
 /** Personne stockée en base : `?` tant que le doc n'est pas rattaché. */
 export type PersonneDoc = Personne | "?";
@@ -113,7 +117,7 @@ export type BulletinPaie = {
 
 export type ExtractionPaie = {
   bulletins: BulletinPaie[];
-  remarques: string | null;
+  remarques?: string | null;
 };
 
 export type ExtractionContrat = {
@@ -127,7 +131,7 @@ export type ExtractionContrat = {
   salaire_mensuel: Champ<number>;
   salaire_est_brut: Champ<boolean>;
   intitule_poste: Champ;
-  remarques: string | null;
+  remarques?: string | null;
 };
 
 export type ExtractionIdentite = {
@@ -137,10 +141,22 @@ export type ExtractionIdentite = {
   nationalite: Champ;
   type_document: Champ<"carte_identite" | "passeport" | "titre_sejour" | "autre">;
   date_expiration: Champ; // YYYY-MM-DD
-  remarques: string | null;
+  remarques?: string | null;
 };
 
-export type Extraction = ExtractionPaie | ExtractionContrat | ExtractionIdentite;
+/**
+ * Extraction d'un fichier « dossier » : un seul scan contenant plusieurs
+ * documents (et parfois plusieurs personnes). Chaque tableau = tous les
+ * éléments de ce type trouvés dans le fichier. La synthèse répartit ensuite les
+ * éléments par personne (A/B) selon le nom extrait.
+ */
+export type ExtractionDossier = {
+  fiches_de_paie: BulletinPaie[];
+  contrats: ExtractionContrat[];
+  pieces_identite: ExtractionIdentite[];
+};
+
+export type Extraction = ExtractionPaie | ExtractionContrat | ExtractionIdentite | ExtractionDossier;
 
 export type DocumentMeta = {
   id: number;
