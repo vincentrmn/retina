@@ -271,11 +271,9 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
         {cand.documents.filter((d) => d.extraction_status === "error").map((d) => (
           <p className="ds-hint" key={`err-${d.id}`} style={{ color: "#b3261e" }}>{d.filename} : {d.extraction_error}</p>
         ))}
-        {cand.documents.filter((d) => (d.extraction as any)?.remarques).map((d) => (
-          <p className="ds-hint" key={`rq-${d.id}`}>
-            <strong>{TYPE_LABEL[d.type]} (personne {d.personne})</strong> : {(d.extraction as any).remarques}
-          </p>
-        ))}
+        {/* Les « remarques » libres du modèle (n° de passeport, fautes, matériel,
+            mentions manuscrites…) sont du bruit pour Shawna : on ne les affiche plus.
+            Elles restent dans l'extraction stockée pour l'audit. */}
         <DropZone candidatId={cand.id} onDone={load} />
       </div></div>
 

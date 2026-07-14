@@ -50,8 +50,11 @@ h3 { font-weight: 600; }
 }
 .topbar > .brand-home, .topbar > .brand { justify-self: start; }
 .page-title {
-  justify-self: center; text-align: center;
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* justify-self:stretch (et non center) : le titre remplit sa colonne, donc le
+     rognage sur 2 lignes fonctionne au lieu de déborder sur la marque. */
+  justify-self: stretch; text-align: center; min-width: 0;
+  overflow: hidden; line-height: 1.2;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
 }
 .topbar-nav {
   justify-self: end;
