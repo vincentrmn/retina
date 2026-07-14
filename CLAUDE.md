@@ -338,6 +338,34 @@ Gros lot de polish + corrections, tout livré et déployé (prod testée à chaq
   empilé (libellé au-dessus, phrase dessous) — plus de tassement sur mobile ; puces `.ds-bullets`
   centrées sur la 1ʳᵉ ligne via `calc(0.75em - 3.5px)`.
 
+### Retours Shawna (03/07/2026) — premiers retours utilisateur, livrés + déployés
+
+- **Titre trop long qui chevauchait la marque** (`.page-title`) : cause = `justify-self:center`
+  dimensionnait le titre à son contenu, donc `overflow:hidden` ne coupait rien. Passage en
+  `justify-self:stretch` + rognage sur 2 lignes (`-webkit-line-clamp`). Le nom long passe sur une 2ᵉ
+  ligne, plus de chevauchement.
+- **Fiche candidat trop bavarde** : suppression de l'affichage des `remarques` libres du modèle
+  (numéros de passeport, fautes, matériel reçu, mentions manuscrites…) — du bruit pour Shawna. Elles
+  restent dans l'extraction stockée (audit), juste plus affichées.
+- **Un seul gros scan « tout dedans » (LE gros point)** : avant, chaque fichier était classé en UN
+  type et extrait comme tel → un scan mélangeant contrat + fiches de paie + pièce d'identité perdait
+  tout sauf un type. Refonte de l'extraction batch :
+  - `extract.ts` → **extraction dossier** : Haiku détecte les **types présents** (`SCHEMA_TYPES_PRESENTS`,
+    3 booléens), puis Opus extrait **en parallèle** chaque type présent avec son schéma **« tableau »**
+    (`SCHEMA_CONTRATS`, `SCHEMA_IDENTITES` — un par appel, réutilise le pattern éprouvé des bulletins ;
+    ⚠️ **ne pas** fabriquer un schéma géant unique, ça retombe sur la limite des unions). Stocké
+    `type='dossier'` avec `fiches_de_paie[]/contrats[]/pieces_identite[]`.
+  - `synthese.ts` → **`partitionByPerson`** : on aplatit tous les documents extraits en « items »
+    (paie/contrat/identité, chacun avec son nom) puis on regroupe **par nom** (sameEntity). Gère
+    « un scan par personne » (un seul nom) ET « un scan pour tout le couple » (items répartis sur 2
+    noms). Les documents typés legacy forcés A/B à la main restent honorés. `assignPersonnes` (ancien
+    rattachement par fichier) supprimé.
+  - UI : un fichier dossier affiche son contenu (« Dossier · 3 fiches de paie, 1 contrat, 1 pièce
+    d'identité »), plus de badge A/B par fichier.
+  - **Testé sur dossiers fictifs** (couple mélangé → A/B séparés, personne seule → 1 personne, legacy
+    forcé → inchangé, cohérence par personne OK). ⚠️ **Calibration sur vrais scans mixtes de Shawna =
+    étape suivante** (l'extraction Haiku+Opus n'est validée que sur des dossiers fabriqués).
+
 ### Pièges durables (valables aussi pour SCOUT & VESPER — même stack, même `globals.css`, même jsPDF)
 
 1. **jsPDF + police standard = WinAnsi (CP1252) UNIQUEMENT.** Un caractère hors de ce jeu ne rate
@@ -375,9 +403,12 @@ Gros lot de polish + corrections, tout livré et déployé (prod testée à chaq
   stocké (le redemander à Vincent).
 
 **Reste à faire** :
-1. **Calibration élargie** (autres dossiers réels du Drive) + validation du barème avec Shawna.
-2. Barème/poids à valider avec Shawna (valeurs actuelles = barème indicatif du §Étage 2).
-3. Éventuel plafonnement de la résolution des scans (levier coût, si le volume grimpe).
+1. **Calibration de l'extraction dossier sur de VRAIS scans mixtes** de Shawna (un seul gros PDF avec
+   plusieurs documents et/ou deux personnes) : vérifier que Haiku détecte bien les types présents et
+   qu'Opus + le regroupement par nom séparent correctement A/B. Aujourd'hui validé sur dossiers fictifs.
+2. **Calibration élargie** (autres dossiers réels du Drive) + validation du barème avec Shawna.
+3. Barème/poids à valider avec Shawna (valeurs actuelles = barème indicatif du §Étage 2).
+4. Éventuel plafonnement de la résolution des scans (levier coût, si le volume grimpe).
 
 ## Conventions pour Claude Code
 
