@@ -366,6 +366,34 @@ Gros lot de polish + corrections, tout livré et déployé (prod testée à chaq
     forcé → inchangé, cohérence par personne OK). ⚠️ **Calibration sur vrais scans mixtes de Shawna =
     étape suivante** (l'extraction Haiku+Opus n'est validée que sur des dossiers fabriqués).
 
+### Candidats INDÉPENDANTS (03/07/2026) — livré + déployé, barème par défaut à valider
+
+Nouveau profil, branché sur la même architecture (l'IA lit, le code juge) et sur l'extraction
+dossier multi-documents. **Barème = valeurs par défaut, à caler avec Shawna sur un vrai dossier.**
+
+- **Documents** : 3 nouveaux types (`avis_imposition`, `bilan`, `kbis`), chacun avec son schéma
+  « tableau » (plusieurs années/exercices, plusieurs personnes). Ajoutés à `SCHEMA_TYPES_PRESENTS`
+  (Haiku) et `SCHEMAS_MULTI`/`PROMPTS_MULTI` (Opus). `DossierType` = `DocType` + ces 3 types,
+  `DOSSIER_TYPES` boucle l'extraction. `ExtractionDossier` gagne `avis_imposition[]/bilans[]/kbis[]`.
+- **Synthèse** (`emploiIndependant`) : une personne SANS fiche de paie NI contrat mais AVEC des
+  documents d'activité → profil indépendant. Revenu mensuel = **revenu net annuel moyen des 2 derniers
+  exercices / 12** (avis d'imposition **prioritaire**, sinon `resultat_net` des bilans). Ancienneté =
+  âge de l'entreprise (KBIS `date_immatriculation`, sinon `date_creation` du bilan). ⚠️ Un **gérant qui
+  se verse un salaire** (fiches de paie présentes) reste traité en **salarié**. `SynthesePersonne.emploi`
+  gagne un sous-objet `independant` (revenus annuels retenus, moyenne, forme juridique, CA, source).
+- **Scoring** (`scoring.ts`, constantes en tête) : `DECOTE_INDEP = 0.2` → le revenu de l'indépendant
+  n'est retenu qu'à **80 %** pour le ratio (revenu moins régulier ; note explicite dans le détail :
+  « X retenus sur Y de revenu réel »). Stabilité : `ANCIENNETE_INDEP_MIN_MOIS = 24` → **18 pts** si
+  activité ≥ 2 ans, **8 pts** sinon. `revenusMenage` du score = revenu **retenu** (cohérent avec le ratio).
+- **Complétude** indépendant : pièce d'identité, avis d'imposition (×2), bilans, KBIS.
+- **UI** : fiche signalétique « indépendant » dédiée (statut, forme juridique, revenu mensuel + moyenne
+  annuelle + source, revenus annuels retenus, CA, entreprise, activité depuis) ; dropzone, export PDF et
+  explication du calcul dans le formulaire du bien à jour.
+- **Testé sur dossiers fictifs** : indépendant seul (avis 2 ans + bilan + KBIS) → revenu, décote,
+  ancienneté OK ; couple **salariée CDI + indépendant mélangés dans un seul scan** → séparation A/B par
+  le nom + revenu ménage retenu corrects. ⚠️ **Calibration sur un vrai dossier d'indépendant = étape
+  suivante** (l'extraction avis/bilan/KBIS n'est validée que sur des dossiers fabriqués).
+
 ### Pièges durables (valables aussi pour SCOUT & VESPER — même stack, même `globals.css`, même jsPDF)
 
 1. **jsPDF + police standard = WinAnsi (CP1252) UNIQUEMENT.** Un caractère hors de ce jeu ne rate
@@ -406,6 +434,8 @@ Gros lot de polish + corrections, tout livré et déployé (prod testée à chaq
 1. **Calibration de l'extraction dossier sur de VRAIS scans mixtes** de Shawna (un seul gros PDF avec
    plusieurs documents et/ou deux personnes) : vérifier que Haiku détecte bien les types présents et
    qu'Opus + le regroupement par nom séparent correctement A/B. Aujourd'hui validé sur dossiers fictifs.
+   **Inclut le profil indépendant** : caler l'extraction avis d'imposition / bilan / KBIS + valider le
+   barème indépendant (décote 20 %, ancienneté 2 ans, revenu = moyenne 2 ans) avec Shawna.
 2. **Calibration élargie** (autres dossiers réels du Drive) + validation du barème avec Shawna.
 3. Barème/poids à valider avec Shawna (valeurs actuelles = barème indicatif du §Étage 2).
 4. Éventuel plafonnement de la résolution des scans (levier coût, si le volume grimpe).
