@@ -86,9 +86,23 @@ export type Bien = {
 
 export type DocType = "fiche_paie" | "contrat" | "piece_identite";
 /**
+ * Types de documents reconnus dans un fichier « dossier ». En plus des trois
+ * documents du salarié, on gère l'indépendant : avis d'imposition, bilan /
+ * comptes de résultat, extrait KBIS (immatriculation de l'entreprise).
+ */
+export type DossierType = DocType | "avis_imposition" | "bilan" | "kbis";
+export const DOSSIER_TYPES: DossierType[] = [
+  "fiche_paie",
+  "contrat",
+  "piece_identite",
+  "avis_imposition",
+  "bilan",
+  "kbis",
+];
+/**
  * Type stocké en base : `auto` avant extraction, `autre` si non reconnu,
  * `dossier` = un seul fichier contenant plusieurs documents (paie + contrat +
- * pièce d'identité, éventuellement pour plusieurs personnes).
+ * pièce d'identité + docs indépendant, éventuellement pour plusieurs personnes).
  */
 export type DocTypeStocke = DocType | "auto" | "autre" | "dossier";
 export type Personne = "A" | "B";
@@ -144,6 +158,35 @@ export type ExtractionIdentite = {
   remarques?: string | null;
 };
 
+// --- Documents de l'INDÉPENDANT --------------------------------------------
+
+/** Avis / bulletin d'imposition : la preuve de revenu la plus fiable (fiscale). */
+export type AvisImposition = {
+  nom_complet: Champ;
+  annee: Champ; // année des revenus (AAAA)
+  revenu_net_annuel: Champ<number>; // revenu net imposable / revenu fiscal de référence, €/an
+};
+
+/** Bilan + compte de résultat d'un exercice. */
+export type Bilan = {
+  nom_complet: Champ; // exploitant / gérant si présent
+  denomination: Champ; // raison sociale de l'entreprise
+  forme_juridique: Champ; // ex : SARL, SAS, entreprise individuelle, profession libérale
+  annee: Champ; // exercice (AAAA)
+  chiffre_affaires: Champ<number>; // €/an
+  resultat_net: Champ<number>; // bénéfice (ou perte, négatif) net, €/an
+  date_creation: Champ; // YYYY-MM-DD si présent
+};
+
+/** Extrait KBIS / immatriculation : existence + ancienneté de l'entreprise. */
+export type Kbis = {
+  denomination: Champ;
+  forme_juridique: Champ;
+  date_immatriculation: Champ; // YYYY-MM-DD
+  dirigeant_nom: Champ; // gérant / président
+  numero: Champ; // SIREN / numéro d'immatriculation
+};
+
 /**
  * Extraction d'un fichier « dossier » : un seul scan contenant plusieurs
  * documents (et parfois plusieurs personnes). Chaque tableau = tous les
@@ -154,9 +197,16 @@ export type ExtractionDossier = {
   fiches_de_paie: BulletinPaie[];
   contrats: ExtractionContrat[];
   pieces_identite: ExtractionIdentite[];
+  avis_imposition: AvisImposition[];
+  bilans: Bilan[];
+  kbis: Kbis[];
 };
 
-export type Extraction = ExtractionPaie | ExtractionContrat | ExtractionIdentite | ExtractionDossier;
+export type Extraction =
+  | ExtractionPaie
+  | ExtractionContrat
+  | ExtractionIdentite
+  | ExtractionDossier;
 
 export type DocumentMeta = {
   id: number;
@@ -185,7 +235,11 @@ export type SynthesePersonne = {
     aVerifier: boolean;
   } | null;
   emploi: {
-    /** Moyenne des bulletins fournis (net). */
+    /**
+     * Revenu mensuel net de la personne. Salarié : moyenne des bulletins.
+     * Indépendant : revenu net annuel moyen / 12 (AVANT toute décote de
+     * prudence, appliquée au scoring). Sert de base au ratio revenus/loyer.
+     */
     salaire_net_mensuel: number | null;
     nbBulletins: number;
     intitule_poste: string | null;
@@ -195,6 +249,18 @@ export type SynthesePersonne = {
     date_entree: string | null;
     ancienneteMois: number | null;
     employeur: string | null;
+    /** Détail indépendant (null pour un salarié). */
+    independant: {
+      /** Revenus nets annuels retenus, par année (source : avis d'imposition ou bilans). */
+      revenus_annuels: { annee: string | null; montant: number }[];
+      /** Moyenne annuelle des revenus retenus, en €/an. */
+      revenu_annuel_moyen: number;
+      forme_juridique: string | null;
+      /** Chiffre d'affaires du dernier exercice connu. */
+      chiffre_affaires: number | null;
+      /** D'où vient le revenu : avis d'imposition (préféré) ou résultat des bilans. */
+      source: "avis_imposition" | "bilan";
+    } | null;
     /** Champs à confiance basse ou manquants, à vérifier à la main. */
     aVerifier: string[];
   } | null;

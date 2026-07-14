@@ -7,7 +7,19 @@ import {
   SCHEMAS,
   SCHEMAS_MULTI,
 } from "./schemas";
-import type { BulletinPaie, DocType, Extraction, ExtractionContrat, ExtractionDossier, ExtractionIdentite } from "./types";
+import {
+  DOSSIER_TYPES,
+  type AvisImposition,
+  type Bilan,
+  type BulletinPaie,
+  type DocType,
+  type DossierType,
+  type Extraction,
+  type ExtractionContrat,
+  type ExtractionDossier,
+  type ExtractionIdentite,
+  type Kbis,
+} from "./types";
 
 /**
  * Étage 1 — extraction (Claude API). Un appel par document, structured
@@ -98,23 +110,25 @@ export async function extractDocumentAuto(
   mime: string,
   content: Buffer
 ): Promise<{ type: "dossier" | "autre"; extraction: ExtractionDossier | null }> {
-  const present = (await callModel(mime, content, SCHEMA_TYPES_PRESENTS, PROMPT_TYPES_PRESENTS, MODEL_CLASSIFICATION)) as {
-    fiche_paie: boolean;
-    contrat: boolean;
-    piece_identite: boolean;
-  };
-  const types = (["fiche_paie", "contrat", "piece_identite"] as DocType[]).filter((t) => present[t]);
+  const present = (await callModel(mime, content, SCHEMA_TYPES_PRESENTS, PROMPT_TYPES_PRESENTS, MODEL_CLASSIFICATION)) as Record<
+    DossierType,
+    boolean
+  >;
+  const types = DOSSIER_TYPES.filter((t) => present[t]);
   if (!types.length) return { type: "autre", extraction: null };
 
   const results = await Promise.all(
     types.map((t) => callModel(mime, content, SCHEMAS_MULTI[t], PROMPTS_MULTI[t]).then((r) => [t, r] as const))
   );
-  const by = Object.fromEntries(results) as Partial<Record<DocType, any>>;
+  const by = Object.fromEntries(results) as Partial<Record<DossierType, any>>;
 
   const extraction: ExtractionDossier = sansCadratin({
     fiches_de_paie: (by.fiche_paie?.bulletins ?? []) as BulletinPaie[],
     contrats: (by.contrat?.contrats ?? []) as ExtractionContrat[],
     pieces_identite: (by.piece_identite?.pieces_identite ?? []) as ExtractionIdentite[],
+    avis_imposition: (by.avis_imposition?.avis_imposition ?? []) as AvisImposition[],
+    bilans: (by.bilan?.bilans ?? []) as Bilan[],
+    kbis: (by.kbis?.kbis ?? []) as Kbis[],
   });
   return { type: "dossier", extraction };
 }

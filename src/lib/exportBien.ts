@@ -261,17 +261,35 @@ export async function exportBienPdf(bien: Bien, candidats: CandidatComplet[]) {
       doc.text(`Personne ${p}${nom ? " · " + nom : ""}`, 14, y);
       y += 2;
       const e: any = s.emploi ?? {};
+      const ind = e.independant;
+      const body: string[][] = ind
+        ? [
+            ["Date de naissance", dateFr(s.identite?.date_naissance)],
+            ["Statut", "Indépendant"],
+            ["Forme juridique", S(ind.forme_juridique ?? "-")],
+            [
+              "Revenu net mensuel",
+              e.salaire_net_mensuel != null
+                ? `${eur(e.salaire_net_mensuel)} (${eur(ind.revenu_annuel_moyen)}/an moyen, d'après ${ind.source === "avis_imposition" ? "les avis d'imposition" : "les bilans"})`
+                : "-",
+            ],
+            ["Revenus annuels retenus", ind.revenus_annuels?.length ? S(ind.revenus_annuels.map((r: any) => `${r.annee ?? "?"} : ${eur(r.montant)}`).join(" ; ")) : "-"],
+            ["Chiffre d'affaires", ind.chiffre_affaires != null ? `${eur(ind.chiffre_affaires)} (dernier exercice)` : "-"],
+            ["Entreprise", S(e.employeur ?? "-")],
+            ["Activité depuis", e.date_entree ? `${dateFr(e.date_entree)}${e.ancienneteMois != null ? ` (${e.ancienneteMois} mois)` : ""}` : "-"],
+          ]
+        : [
+            ["Date de naissance", dateFr(s.identite?.date_naissance)],
+            ["Salaire net mensuel", e.salaire_net_mensuel != null ? `${eur(e.salaire_net_mensuel)} (moyenne de ${e.nbBulletins ?? 0} bulletin(s))` : "-"],
+            ["Poste", S(e.intitule_poste ?? "-")],
+            ["Type de contrat", e.type_contrat ? CONTRAT[e.type_contrat] ?? e.type_contrat : "-"],
+            ["Période d'essai", e.periode_essai == null ? "-" : e.periode_essai ? `oui${e.fin_periode_essai ? ", jusqu'au " + dateFr(e.fin_periode_essai) : ""}` : "non"],
+            ["Employeur", S(e.employeur ?? "-")],
+            ["Dans l'entreprise depuis", e.date_entree ? `${dateFr(e.date_entree)}${e.ancienneteMois != null ? ` (${e.ancienneteMois} mois)` : ""}` : "-"],
+          ];
       autoTable(doc, {
         startY: y + 2,
-        body: [
-          ["Date de naissance", dateFr(s.identite?.date_naissance)],
-          ["Salaire net mensuel", e.salaire_net_mensuel != null ? `${eur(e.salaire_net_mensuel)} (moyenne de ${e.nbBulletins ?? 0} bulletin(s))` : "-"],
-          ["Poste", S(e.intitule_poste ?? "-")],
-          ["Type de contrat", e.type_contrat ? CONTRAT[e.type_contrat] ?? e.type_contrat : "-"],
-          ["Période d'essai", e.periode_essai == null ? "-" : e.periode_essai ? `oui${e.fin_periode_essai ? ", jusqu'au " + dateFr(e.fin_periode_essai) : ""}` : "non"],
-          ["Employeur", S(e.employeur ?? "-")],
-          ["Dans l'entreprise depuis", e.date_entree ? `${dateFr(e.date_entree)}${e.ancienneteMois != null ? ` (${e.ancienneteMois} mois)` : ""}` : "-"],
-        ],
+        body,
         styles: { fontSize: 8.5, cellPadding: 2, textColor: INK, lineColor: LINE, lineWidth: 0.1 },
         columnStyles: { 0: { cellWidth: 55, textColor: SOFT }, 1: { fontStyle: "bold" } },
         margin: { left: 14, right: 14 },

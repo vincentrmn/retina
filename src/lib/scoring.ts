@@ -21,6 +21,19 @@ function eur(v: number): string {
 
 const CAP_ELIMINATOIRE = 40;
 
+/**
+ * Barème indépendant (valeurs par défaut, à valider avec Shawna) :
+ * - décote de prudence appliquée au revenu de l'indépendant (revenu moins stable
+ *   qu'un salaire) : on ne retient que 80 % du revenu net moyen pour le ratio ;
+ * - ancienneté d'activité minimale attendue pour considérer l'activité établie.
+ */
+const DECOTE_INDEP = 0.2;
+const ANCIENNETE_INDEP_MIN_MOIS = 24;
+/** Part du revenu d'une personne retenue pour le ratio (décote si indépendant). */
+function partRetenue(p: SynthesePersonne): number {
+  return p.emploi?.type_contrat === "independant" ? 1 - DECOTE_INDEP : 1;
+}
+
 function essaiEnCours(p: SynthesePersonne, now: Date): boolean {
   const e = p.emploi;
   if (!e || e.periode_essai !== true) return false;
@@ -39,8 +52,12 @@ function stabilitePersonne(p: SynthesePersonne, criteres: Criteres, now: Date): 
       return criteres.cddAccepte ? { pts: 15, label: "CDD" } : { pts: 8, label: "CDD (non accepté sur ce bien)" };
     case "interim":
       return { pts: 8, label: "intérim" };
-    case "independant":
-      return { pts: 12, label: "indépendant" };
+    case "independant": {
+      const mois = e.ancienneteMois;
+      return mois != null && mois < ANCIENNETE_INDEP_MIN_MOIS
+        ? { pts: 8, label: "indépendant, activité récente (moins de 2 ans)" }
+        : { pts: 18, label: "indépendant établi (2 ans et plus)" };
+    }
     default:
       return { pts: 10, label: "autre contrat" };
   }
@@ -83,14 +100,22 @@ export function scoreCandidat(
   const actifs = synthese.filter((p) => p.emploi);
 
   // --- 1. Ratio revenus (40 pts) --------------------------------------------
-  const revenus = actifs
-    .map((p) => p.emploi!.salaire_net_mensuel)
-    .filter((v): v is number => v != null)
-    .reduce((a, b) => a + b, 0);
+  // Revenu réel = somme des revenus nets mensuels. Revenu RETENU = idem, mais le
+  // revenu d'un indépendant est décoté (prudence : revenu moins stable). C'est le
+  // revenu retenu qui décide du ratio.
+  const avecRevenu = actifs.filter((p) => p.emploi!.salaire_net_mensuel != null);
+  const revenusReels = avecRevenu.reduce((a, p) => a + p.emploi!.salaire_net_mensuel!, 0);
+  const revenus = Math.round(avecRevenu.reduce((a, p) => a + p.emploi!.salaire_net_mensuel! * partRetenue(p), 0));
+  const partIndep = avecRevenu.filter((p) => p.emploi!.type_contrat === "independant");
+  const revenuIndepReel = Math.round(partIndep.reduce((a, p) => a + p.emploi!.salaire_net_mensuel!, 0));
+  const revenuIndepRetenu = Math.round(revenuIndepReel * (1 - DECOTE_INDEP));
   const ratio = revenus > 0 && cout > 0 ? revenus / cout : null;
   let ratioPts = 0;
   let ratioElim = false;
   let ratioDetail: string;
+  const noteIndep = partIndep.length
+    ? ` Le revenu de l'indépendant est retenu à ${Math.round((1 - DECOTE_INDEP) * 100)} % par prudence (${eur(revenuIndepRetenu)} retenus sur ${eur(revenuIndepReel)} de revenu réel).`
+    : "";
   if (!criteres.ratioActif) {
     // Critère désactivé sur ce bien : aucune exigence de revenus, points pleins.
     ratioPts = 40;
@@ -98,9 +123,11 @@ export function scoreCandidat(
   } else if (ratio != null) {
     ratioPts = ratio >= criteres.ratioMin ? 40 : Math.max(0, Math.round((ratio / criteres.ratioMin) * 40));
     ratioElim = criteres.ratioEliminatoire && ratio < criteres.ratioMin;
-    ratioDetail = `Les revenus nets du ménage (${eur(revenus)}) représentent ${ratio.toFixed(1)} fois le coût du logement (${eur(cout)} de loyer et charges). Le bien exige au minimum ${criteres.ratioMin} fois ce coût.`;
+    ratioDetail =
+      `Les revenus nets retenus du ménage (${eur(revenus)}) représentent ${ratio.toFixed(1)} fois le coût du logement (${eur(cout)} de loyer et charges). Le bien exige au minimum ${criteres.ratioMin} fois ce coût.` +
+      noteIndep;
   } else {
-    ratioDetail = "Revenus non déterminables : aucun salaire net n'a pu être extrait des bulletins.";
+    ratioDetail = "Revenus non déterminables : aucun revenu net n'a pu être établi (ni fiche de paie, ni avis d'imposition ou bilan exploitable).";
   }
   criteresOut.push({
     key: "ratio",

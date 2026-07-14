@@ -1,4 +1,6 @@
 import type {
+  AvisImposition,
+  Bilan,
   BulletinPaie,
   Champ,
   CoherenceCheck,
@@ -6,7 +8,7 @@ import type {
   DocumentMeta,
   ExtractionContrat,
   ExtractionIdentite,
-  ExtractionPaie,
+  Kbis,
   Personne,
   SynthesePersonne,
 } from "./types";
@@ -54,6 +56,10 @@ type DocsByType = {
   paies: BulletinPaie[];
   contrat: ExtractionContrat | null;
   identite: ExtractionIdentite | null;
+  // Documents de l'indépendant
+  avis: AvisImposition[];
+  bilans: Bilan[];
+  kbis: Kbis | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -64,7 +70,12 @@ type DocsByType = {
 // scan pour tout le couple » (les items se répartissent sur deux noms).
 // ---------------------------------------------------------------------------
 
-type RawItem = { kind: "paie" | "contrat" | "identite"; nom: string | null; forced: Personne | null; data: any };
+type RawItem = {
+  kind: "paie" | "contrat" | "identite" | "avis" | "bilan" | "kbis";
+  nom: string | null;
+  forced: Personne | null;
+  data: any;
+};
 
 function nomOfIdentite(i: ExtractionIdentite): string | null {
   return [val(i.prenom), val(i.nom)].filter(Boolean).join(" ") || null;
@@ -80,6 +91,9 @@ function itemsOfDoc(d: DocumentMeta): RawItem[] {
   const addPaie = (b: BulletinPaie) => out.push({ kind: "paie", nom: val(b.nom_complet), forced, data: b });
   const addContrat = (c: ExtractionContrat) => out.push({ kind: "contrat", nom: val(c.nom_complet), forced, data: c });
   const addId = (i: ExtractionIdentite) => out.push({ kind: "identite", nom: nomOfIdentite(i), forced, data: i });
+  const addAvis = (a: AvisImposition) => out.push({ kind: "avis", nom: val(a.nom_complet), forced, data: a });
+  const addBilan = (b: Bilan) => out.push({ kind: "bilan", nom: val(b.nom_complet) ?? val(b.denomination), forced, data: b });
+  const addKbis = (k: Kbis) => out.push({ kind: "kbis", nom: val(k.dirigeant_nom) ?? val(k.denomination), forced, data: k });
   switch (d.type) {
     case "fiche_paie": (e.bulletins ?? []).forEach(addPaie); break;
     case "contrat": addContrat(e as ExtractionContrat); break;
@@ -88,6 +102,9 @@ function itemsOfDoc(d: DocumentMeta): RawItem[] {
       (e.fiches_de_paie ?? []).forEach(addPaie);
       (e.contrats ?? []).forEach(addContrat);
       (e.pieces_identite ?? []).forEach(addId);
+      (e.avis_imposition ?? []).forEach(addAvis);
+      (e.bilans ?? []).forEach(addBilan);
+      (e.kbis ?? []).forEach(addKbis);
       break;
   }
   return out;
@@ -132,10 +149,8 @@ function assignItems(items: RawItem[]): (Personne | null)[] {
 function partitionByPerson(docs: DocumentMeta[]): Record<Personne, DocsByType> {
   const items = docs.flatMap(itemsOfDoc);
   const who = assignItems(items);
-  const buckets: Record<Personne, DocsByType> = {
-    A: { paies: [], contrat: null, identite: null },
-    B: { paies: [], contrat: null, identite: null },
-  };
+  const empty = (): DocsByType => ({ paies: [], contrat: null, identite: null, avis: [], bilans: [], kbis: null });
+  const buckets: Record<Personne, DocsByType> = { A: empty(), B: empty() };
   items.forEach((it, i) => {
     const p = who[i];
     if (!p) return;
@@ -143,8 +158,78 @@ function partitionByPerson(docs: DocumentMeta[]): Record<Personne, DocsByType> {
     if (it.kind === "paie") bk.paies.push(it.data);
     else if (it.kind === "contrat") bk.contrat = bk.contrat ?? it.data;
     else if (it.kind === "identite") bk.identite = bk.identite ?? it.data;
+    else if (it.kind === "avis") bk.avis.push(it.data);
+    else if (it.kind === "bilan") bk.bilans.push(it.data);
+    else if (it.kind === "kbis") bk.kbis = bk.kbis ?? it.data;
   });
   return buckets;
+}
+
+/** Une personne a-t-elle des documents d'indépendant (avis, bilan ou KBIS) ? */
+function aDocsIndependant(b: DocsByType): boolean {
+  return b.avis.length > 0 || b.bilans.length > 0 || !!b.kbis;
+}
+
+type Emploi = NonNullable<SynthesePersonne["emploi"]>;
+
+/**
+ * Emploi d'un INDÉPENDANT (pas de fiche de paie ni de contrat de travail).
+ * Revenu mensuel = moyenne des revenus nets annuels des 2 derniers exercices /12
+ * (source : avis d'imposition en priorité, sinon résultat net des bilans). La
+ * décote de prudence est appliquée AU SCORING, pas ici (la synthèse = les faits).
+ * Ancienneté = âge de l'entreprise (KBIS, sinon date de création du bilan).
+ */
+function emploiIndependant(b: DocsByType, now: Date, aVerifier: string[]): Emploi {
+  let source: "avis_imposition" | "bilan" = "avis_imposition";
+  let annuels = b.avis
+    .map((a) => ({ annee: val(a.annee), montant: val(a.revenu_net_annuel) }))
+    .filter((x): x is { annee: string | null; montant: number } => x.montant != null);
+  if (!annuels.length) {
+    source = "bilan";
+    annuels = b.bilans
+      .map((bi) => ({ annee: val(bi.annee), montant: val(bi.resultat_net) }))
+      .filter((x): x is { annee: string | null; montant: number } => x.montant != null);
+  }
+  // 2 exercices les plus récents (tri par année décroissante).
+  annuels.sort((x, y) => (y.annee ?? "").localeCompare(x.annee ?? ""));
+  const retenus = annuels.slice(0, 2);
+  const moyenne = retenus.length ? Math.round(retenus.reduce((a, x) => a + x.montant, 0) / retenus.length) : null;
+  const mensuel = moyenne != null ? Math.round((moyenne / 12) * 100) / 100 : null;
+
+  const bilansTries = [...b.bilans].sort((x, y) => (val(y.annee) ?? "").localeCompare(val(x.annee) ?? ""));
+  const dateCreation =
+    (b.kbis ? val(b.kbis.date_immatriculation) : null) ?? bilansTries.map((bi) => val(bi.date_creation)).find((v) => v) ?? null;
+  const anciennete = dateCreation ? monthsBetween(dateCreation, now) : null;
+  const formeJuridique =
+    (b.kbis ? val(b.kbis.forme_juridique) : null) ?? bilansTries.map((bi) => val(bi.forme_juridique)).find((v) => v) ?? null;
+  const denomination =
+    (b.kbis ? val(b.kbis.denomination) : null) ?? bilansTries.map((bi) => val(bi.denomination)).find((v) => v) ?? null;
+  const caDernier = bilansTries.map((bi) => val(bi.chiffre_affaires)).find((v) => v != null) ?? null;
+
+  if (!retenus.length) aVerifier.push("revenu de l'indépendant non déterminable (ni avis d'imposition ni bilan exploitable)");
+  else if (retenus.length < 2) aVerifier.push("un seul exercice de revenu fourni (2 recommandés)");
+  if (!dateCreation) aVerifier.push("date de création de l'entreprise");
+  if (retenus.some((r) => r.montant <= 0)) aVerifier.push("un exercice en perte");
+
+  return {
+    salaire_net_mensuel: mensuel,
+    nbBulletins: 0,
+    intitule_poste: null,
+    type_contrat: "independant",
+    periode_essai: null,
+    fin_periode_essai: null,
+    date_entree: dateCreation,
+    ancienneteMois: anciennete,
+    employeur: denomination,
+    independant: {
+      revenus_annuels: retenus,
+      revenu_annuel_moyen: moyenne ?? 0,
+      forme_juridique: formeJuridique,
+      chiffre_affaires: caDernier,
+      source,
+    },
+    aVerifier,
+  };
 }
 
 export function buildSynthese(docs: DocumentMeta[], now = new Date()): SynthesePersonne[] {
@@ -153,47 +238,63 @@ export function buildSynthese(docs: DocumentMeta[], now = new Date()): SyntheseP
   const out: SynthesePersonne[] = [];
 
   for (const p of personnes) {
-    const { paies, contrat, identite } = parts[p];
-    if (!paies.length && !contrat && !identite) continue;
+    const b = parts[p];
+    const { paies, contrat, identite } = b;
+    if (!paies.length && !contrat && !identite && !aDocsIndependant(b)) continue;
 
     const aVerifier: string[] = [];
 
-    const nets = paies.map((f) => val(f.salaire_net_mensuel)).filter((v): v is number => v != null);
-    const salaireNet = nets.length ? Math.round((nets.reduce((a, b) => a + b, 0) / nets.length) * 100) / 100 : null;
-    if (paies.some((f) => douteux(f.salaire_net_mensuel))) aVerifier.push("salaire net (bulletin peu lisible)");
-    if (!paies.length) aVerifier.push("aucune fiche de paie fournie");
-    else if (paies.length < 3) aVerifier.push(`seulement ${paies.length} bulletin${paies.length > 1 ? "s" : ""} (3 recommandés)`);
+    // Indépendant : pas de fiche de paie ni de contrat de travail, mais des
+    // documents d'activité (avis d'imposition, bilan, KBIS). Un gérant qui se
+    // verse un salaire (fiches de paie présentes) reste traité en salarié.
+    const estIndependant = !paies.length && !contrat && aDocsIndependant(b);
 
-    const typeContrat = contrat ? val(contrat.type_contrat) : null;
-    if (contrat && douteux(contrat.type_contrat)) aVerifier.push("type de contrat");
-    if (!contrat) aVerifier.push("aucun contrat de travail fourni");
+    let emploi: Emploi;
+    if (estIndependant) {
+      emploi = emploiIndependant(b, now, aVerifier);
+    } else {
+      const nets = paies.map((f) => val(f.salaire_net_mensuel)).filter((v): v is number => v != null);
+      const salaireNet = nets.length ? Math.round((nets.reduce((a, x) => a + x, 0) / nets.length) * 100) / 100 : null;
+      if (paies.some((f) => douteux(f.salaire_net_mensuel))) aVerifier.push("salaire net (bulletin peu lisible)");
+      if (!paies.length) aVerifier.push("aucune fiche de paie fournie");
+      else if (paies.length < 3) aVerifier.push(`seulement ${paies.length} bulletin${paies.length > 1 ? "s" : ""} (3 recommandés)`);
 
-    const dateEntree = (contrat ? val(contrat.date_debut) : null) ?? paies.map((f) => val(f.date_entree)).find((v) => v) ?? null;
-    const anciennete = dateEntree ? monthsBetween(dateEntree, now) : null;
-    if (!dateEntree) aVerifier.push("date d'entrée dans l'entreprise");
+      const typeContrat = contrat ? val(contrat.type_contrat) : null;
+      if (contrat && douteux(contrat.type_contrat)) aVerifier.push("type de contrat");
+      if (!contrat) aVerifier.push("aucun contrat de travail fourni");
 
-    const essai = contrat ? val(contrat.periode_essai) : null;
-    const finEssai = contrat ? val(contrat.fin_periode_essai) : null;
-    if (contrat && douteux(contrat.periode_essai)) aVerifier.push("période d'essai");
+      const dateEntree = (contrat ? val(contrat.date_debut) : null) ?? paies.map((f) => val(f.date_entree)).find((v) => v) ?? null;
+      const anciennete = dateEntree ? monthsBetween(dateEntree, now) : null;
+      if (!dateEntree) aVerifier.push("date d'entrée dans l'entreprise");
 
-    const emploi = {
-      salaire_net_mensuel: salaireNet,
-      nbBulletins: paies.length,
-      intitule_poste: (contrat ? val(contrat.intitule_poste) : null) ?? paies.map((f) => val(f.intitule_poste)).find((v) => v) ?? null,
-      type_contrat: typeContrat,
-      periode_essai: essai,
-      fin_periode_essai: finEssai,
-      date_entree: dateEntree,
-      ancienneteMois: anciennete,
-      employeur: paies.map((f) => val(f.employeur)).find((v) => v) ?? (contrat ? val(contrat.employeur) : null),
-      aVerifier,
-    };
+      const essai = contrat ? val(contrat.periode_essai) : null;
+      const finEssai = contrat ? val(contrat.fin_periode_essai) : null;
+      if (contrat && douteux(contrat.periode_essai)) aVerifier.push("période d'essai");
 
-    // Nom de repli : sans pièce d'identité, on prend le nom porté par le contrat
-    // ou les bulletins (marqué « à vérifier » car pas issu d'un document officiel).
+      emploi = {
+        salaire_net_mensuel: salaireNet,
+        nbBulletins: paies.length,
+        intitule_poste: (contrat ? val(contrat.intitule_poste) : null) ?? paies.map((f) => val(f.intitule_poste)).find((v) => v) ?? null,
+        type_contrat: typeContrat,
+        periode_essai: essai,
+        fin_periode_essai: finEssai,
+        date_entree: dateEntree,
+        ancienneteMois: anciennete,
+        employeur: paies.map((f) => val(f.employeur)).find((v) => v) ?? (contrat ? val(contrat.employeur) : null),
+        independant: null,
+        aVerifier,
+      };
+    }
+
+    // Nom de repli : sans pièce d'identité, on prend le nom porté par un autre
+    // document (contrat, bulletin, avis d'imposition, bilan, KBIS) — marqué
+    // « à vérifier » car pas issu d'un document officiel d'identité.
     const nomRepli =
       (contrat ? val(contrat.nom_complet) : null) ??
       paies.map((f) => val(f.nom_complet)).find((v) => v) ??
+      b.avis.map((a) => val(a.nom_complet)).find((v) => v) ??
+      b.bilans.map((bi) => val(bi.nom_complet)).find((v) => v) ??
+      (b.kbis ? val(b.kbis.dirigeant_nom) : null) ??
       null;
 
     out.push({
@@ -332,10 +433,11 @@ export function buildCompletude(docs: DocumentMeta[], now = new Date()): Complet
   const parts = partitionByPerson(docs);
 
   for (const p of personnes) {
-    const { paies, contrat, identite } = parts[p];
-    if (!paies.length && !contrat && !identite) continue;
+    const b = parts[p];
+    const { paies, contrat, identite } = b;
+    if (!paies.length && !contrat && !identite && !aDocsIndependant(b)) continue;
 
-    // Pièce d'identité
+    // Pièce d'identité (commune aux deux profils)
     items.push({
       personne: p,
       label: "Pièce d'identité",
@@ -343,7 +445,35 @@ export function buildCompletude(docs: DocumentMeta[], now = new Date()): Complet
       detail: identite ? "présente" : "à uploader",
     });
 
-    // Contrat de travail
+    const estIndependant = !paies.length && !contrat && aDocsIndependant(b);
+    if (estIndependant) {
+      // Avis d'imposition : 2 années attendues
+      const nAvis = b.avis.length;
+      items.push({
+        personne: p,
+        label: "Avis d'imposition (2 dernières années)",
+        statut: nAvis >= 2 ? "ok" : nAvis === 1 ? "partiel" : "manquant",
+        detail: nAvis ? `${nAvis} avis fourni${nAvis > 1 ? "s" : ""} sur 2 attendus` : "à uploader",
+      });
+      // Bilan / comptes de résultat
+      const nBil = b.bilans.length;
+      items.push({
+        personne: p,
+        label: "Bilan / comptes de résultat",
+        statut: nBil >= 2 ? "ok" : nBil === 1 ? "partiel" : "manquant",
+        detail: nBil ? `${nBil} exercice${nBil > 1 ? "s" : ""} fourni${nBil > 1 ? "s" : ""}` : "à uploader",
+      });
+      // Extrait KBIS / immatriculation
+      items.push({
+        personne: p,
+        label: "Extrait KBIS / immatriculation",
+        statut: b.kbis ? "ok" : "manquant",
+        detail: b.kbis ? "présent" : "à uploader (prouve l'ancienneté de l'entreprise)",
+      });
+      continue;
+    }
+
+    // --- Salarié ---
     items.push({
       personne: p,
       label: "Contrat de travail",

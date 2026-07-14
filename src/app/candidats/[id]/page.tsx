@@ -93,9 +93,10 @@ function DropZone({ candidatId, onDone }: { candidatId: number; onDone: () => vo
           <>
             <strong>Déposez ici tous les documents du dossier</strong>
             <span className="ds-muted">
-              Fiches de paie, contrats, pièces d&apos;identité en vrac, pour une personne comme pour un couple.
-              PDF ou photos, 15 Mo maximum par fichier. Vous n&apos;avez rien à trier : au moment de l&apos;analyse,
-              RETINA reconnaît seul le type de chaque document et la personne concernée.
+              Salarié (fiches de paie, contrat, pièce d&apos;identité) ou indépendant (avis d&apos;imposition,
+              bilan, extrait KBIS), en vrac, pour une personne comme pour un couple — y compris un seul gros scan
+              qui regroupe tout. PDF ou photos, 15 Mo maximum par fichier. Vous n&apos;avez rien à trier : à
+              l&apos;analyse, RETINA reconnaît chaque document et le rattache à la bonne personne.
             </span>
             <span className="ds-btn ds-btn--secondary ds-btn--sm">Choisir des fichiers</span>
           </>
@@ -126,13 +127,14 @@ const TYPE_LABEL: Record<string, string> = {
 function dossierResume(d: DocumentMeta): string | null {
   if (d.type !== "dossier" || !d.extraction) return null;
   const e = d.extraction as any;
-  const np = (e.fiches_de_paie ?? []).length;
-  const nc = (e.contrats ?? []).length;
-  const ni = (e.pieces_identite ?? []).length;
   const parts: string[] = [];
-  if (np) parts.push(`${np} fiche${np > 1 ? "s" : ""} de paie`);
-  if (nc) parts.push(`${nc} contrat${nc > 1 ? "s" : ""}`);
-  if (ni) parts.push(`${ni} pièce${ni > 1 ? "s" : ""} d'identité`);
+  const push = (n: number, sing: string, plur: string) => { if (n) parts.push(`${n} ${n > 1 ? plur : sing}`); };
+  push((e.fiches_de_paie ?? []).length, "fiche de paie", "fiches de paie");
+  push((e.contrats ?? []).length, "contrat", "contrats");
+  push((e.pieces_identite ?? []).length, "pièce d'identité", "pièces d'identité");
+  push((e.avis_imposition ?? []).length, "avis d'imposition", "avis d'imposition");
+  push((e.bilans ?? []).length, "bilan", "bilans");
+  push((e.kbis ?? []).length, "extrait KBIS", "extraits KBIS");
   return parts.length ? parts.join(", ") : null;
 }
 
@@ -397,17 +399,42 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
                 <div className="ds-card" key={p}>
                   <div className="ds-card__head">Personne {p}{nomDe(p) ? ` · ${nomDe(p)}` : ""}</div>
                   <div className="ds-card__body">
-                    {/* Toujours les mêmes lignes pour A et B, « - » si l'information manque. */}
                     <Kv k="Date de naissance" v={dateFr(s.identite?.date_naissance)} warn={!!s.identite?.aVerifier} />
-                    <Kv k="Salaire net mensuel" v={e?.salaire_net_mensuel != null ? `${eur(e.salaire_net_mensuel)} (moyenne de ${e.nbBulletins} bulletin${e.nbBulletins > 1 ? "s" : ""})` : "-"} />
-                    <Kv k="Poste" v={e?.intitule_poste ?? "-"} />
-                    <Kv k="Type de contrat" v={e?.type_contrat ? CONTRAT_LABELS[e.type_contrat] : "-"} />
-                    <Kv
-                      k="Période d'essai"
-                      v={!e || e.periode_essai == null ? "-" : e.periode_essai ? `oui${e.fin_periode_essai ? `, jusqu'au ${dateFr(e.fin_periode_essai)}` : ""}` : "non"}
-                    />
-                    <Kv k="Employeur" v={e?.employeur ?? "-"} />
-                    <Kv k="Dans l'entreprise depuis" v={e?.date_entree ? `${dateFr(e.date_entree)}${e.ancienneteMois != null ? ` (${e.ancienneteMois} mois)` : ""}` : "-"} />
+                    {e?.independant ? (
+                      <>
+                        {/* Profil INDÉPENDANT : revenu tiré des avis d'imposition / bilans. */}
+                        <Kv k="Statut" v="Indépendant" />
+                        <Kv k="Forme juridique" v={e.independant.forme_juridique ?? "-"} />
+                        <Kv
+                          k="Revenu net mensuel"
+                          v={e.salaire_net_mensuel != null
+                            ? `${eur(e.salaire_net_mensuel)} (${eur(e.independant.revenu_annuel_moyen)}/an en moyenne, d'après ${e.independant.source === "avis_imposition" ? "les avis d'imposition" : "les bilans"})`
+                            : "-"}
+                        />
+                        <Kv
+                          k="Revenus annuels retenus"
+                          v={e.independant.revenus_annuels.length
+                            ? e.independant.revenus_annuels.map((r) => `${r.annee ?? "?"} : ${eur(r.montant)}`).join(" · ")
+                            : "-"}
+                        />
+                        <Kv k="Chiffre d'affaires" v={e.independant.chiffre_affaires != null ? `${eur(e.independant.chiffre_affaires)} (dernier exercice)` : "-"} />
+                        <Kv k="Entreprise" v={e.employeur ?? "-"} />
+                        <Kv k="Activité depuis" v={e.date_entree ? `${dateFr(e.date_entree)}${e.ancienneteMois != null ? ` (${e.ancienneteMois} mois)` : ""}` : "-"} />
+                      </>
+                    ) : (
+                      <>
+                        {/* Profil SALARIÉ. Lignes constantes, « - » si l'information manque. */}
+                        <Kv k="Salaire net mensuel" v={e?.salaire_net_mensuel != null ? `${eur(e.salaire_net_mensuel)} (moyenne de ${e.nbBulletins} bulletin${e.nbBulletins > 1 ? "s" : ""})` : "-"} />
+                        <Kv k="Poste" v={e?.intitule_poste ?? "-"} />
+                        <Kv k="Type de contrat" v={e?.type_contrat ? CONTRAT_LABELS[e.type_contrat] : "-"} />
+                        <Kv
+                          k="Période d'essai"
+                          v={!e || e.periode_essai == null ? "-" : e.periode_essai ? `oui${e.fin_periode_essai ? `, jusqu'au ${dateFr(e.fin_periode_essai)}` : ""}` : "non"}
+                        />
+                        <Kv k="Employeur" v={e?.employeur ?? "-"} />
+                        <Kv k="Dans l'entreprise depuis" v={e?.date_entree ? `${dateFr(e.date_entree)}${e.ancienneteMois != null ? ` (${e.ancienneteMois} mois)` : ""}` : "-"} />
+                      </>
+                    )}
                     {e && e.aVerifier.length > 0 && (
                       <p className="ds-hint" style={{ color: "#9a6700" }}>À vérifier : {e.aVerifier.join(" · ")}</p>
                     )}

@@ -1,4 +1,4 @@
-import type { DocType } from "./types";
+import type { DocType, DossierType } from "./types";
 
 /**
  * Schémas JSON (structured outputs) par type de document.
@@ -113,11 +113,48 @@ export const SCHEMAS: Record<DocType, Json> = {
   piece_identite: SCHEMA_IDENTITE,
 };
 
+// --- Documents de l'INDÉPENDANT (schémas « tableau », un item par année/exercice) ---
+
+const AVIS_PROPS: Record<string, Json> = {
+  nom_complet: champ("string", "Nom complet du contribuable"),
+  annee: champ("string", "Année des revenus concernés, format AAAA"),
+  revenu_net_annuel: champ("number", "Revenu net imposable OU revenu fiscal de référence, en euros par an"),
+};
+const BILAN_PROPS: Record<string, Json> = {
+  nom_complet: champ("string", "Nom de l'exploitant ou du gérant si présent"),
+  denomination: champ("string", "Raison sociale / nom de l'entreprise"),
+  forme_juridique: champ("string", "Forme juridique (SARL, SAS, entreprise individuelle, profession libérale, etc.)"),
+  annee: champ("string", "Exercice concerné, format AAAA"),
+  chiffre_affaires: champ("number", "Chiffre d'affaires de l'exercice, en euros"),
+  resultat_net: champ("number", "Résultat net de l'exercice (bénéfice positif, perte négative), en euros"),
+  date_creation: champ("string", "Date de création de l'entreprise, YYYY-MM-DD, si présente"),
+};
+const KBIS_PROPS: Record<string, Json> = {
+  denomination: champ("string", "Raison sociale / dénomination"),
+  forme_juridique: champ("string", "Forme juridique"),
+  date_immatriculation: champ("string", "Date d'immatriculation / de création, YYYY-MM-DD"),
+  dirigeant_nom: champ("string", "Nom du dirigeant (gérant, président)"),
+  numero: champ("string", "Numéro d'immatriculation (SIREN, RCS, etc.)"),
+};
+
+export const SCHEMA_AVIS = objet({
+  avis_imposition: { type: "array", description: "Un élément PAR avis/bulletin d'imposition (souvent un par année, éventuellement pour deux personnes).", items: itemObjet(AVIS_PROPS) },
+});
+export const SCHEMA_BILANS = objet({
+  bilans: { type: "array", description: "Un élément PAR exercice de bilan/compte de résultat présent.", items: itemObjet(BILAN_PROPS) },
+});
+export const SCHEMA_KBIS = objet({
+  kbis: { type: "array", description: "Un élément PAR extrait KBIS / avis d'immatriculation présent.", items: itemObjet(KBIS_PROPS) },
+});
+
 /** Schémas « tableau » par type, pour l'extraction d'un fichier dossier. */
-export const SCHEMAS_MULTI: Record<DocType, Json> = {
+export const SCHEMAS_MULTI: Record<DossierType, Json> = {
   fiche_paie: SCHEMA_PAIE,
   contrat: SCHEMA_CONTRATS,
   piece_identite: SCHEMA_IDENTITES,
+  avis_imposition: SCHEMA_AVIS,
+  bilan: SCHEMA_BILANS,
+  kbis: SCHEMA_KBIS,
 };
 
 /**
@@ -128,22 +165,25 @@ export const SCHEMAS_MULTI: Record<DocType, Json> = {
 export const SCHEMA_TYPES_PRESENTS: Json = {
   type: "object",
   properties: {
-    fiche_paie: { type: "boolean", description: "Le fichier contient au moins une fiche de paie (bulletin de salaire) ?" },
-    contrat: { type: "boolean", description: "Le fichier contient au moins un contrat de travail ?" },
-    piece_identite: { type: "boolean", description: "Le fichier contient au moins une pièce d'identité (CNI, passeport, titre de séjour) ?" },
+    fiche_paie: { type: "boolean", description: "Au moins une fiche de paie (bulletin de salaire) ?" },
+    contrat: { type: "boolean", description: "Au moins un contrat de travail ?" },
+    piece_identite: { type: "boolean", description: "Au moins une pièce d'identité (CNI, passeport, titre de séjour) ?" },
+    avis_imposition: { type: "boolean", description: "Au moins un avis ou bulletin d'imposition (document des impôts indiquant un revenu) ?" },
+    bilan: { type: "boolean", description: "Au moins un bilan comptable ou compte de résultat d'une entreprise ?" },
+    kbis: { type: "boolean", description: "Au moins un extrait KBIS ou avis d'immatriculation d'entreprise ?" },
   },
-  required: ["fiche_paie", "contrat", "piece_identite"],
+  required: ["fiche_paie", "contrat", "piece_identite", "avis_imposition", "bilan", "kbis"],
   additionalProperties: false,
 };
 
 export const PROMPT_TYPES_PRESENTS =
   "Ce fichier fait partie d'un dossier de candidature à la location. Il peut contenir UN SEUL document ou PLUSIEURS " +
-  "documents différents dans le même scan (par exemple des fiches de paie, un contrat de travail et une pièce " +
-  "d'identité à la suite), éventuellement pour deux personnes. Indique, pour chaque type, s'il est présent au moins " +
-  "une fois dans le fichier.";
+  "documents différents dans le même scan (fiches de paie, contrat de travail, pièce d'identité pour un salarié ; " +
+  "avis d'imposition, bilan/compte de résultat, extrait KBIS pour un indépendant), éventuellement pour deux " +
+  "personnes. Indique, pour chaque type, s'il est présent au moins une fois dans le fichier.";
 
 /** Prompts « tableau » (tous les documents du type dans le fichier, toutes personnes). */
-export const PROMPTS_MULTI: Record<DocType, string> = {
+export const PROMPTS_MULTI: Record<DossierType, string> = {
   fiche_paie:
     "Ce fichier contient une ou plusieurs fiches de paie (bulletins de salaire), possiblement pour DEUX personnes " +
     "différentes et sur plusieurs mois, en scans de qualité variable. Produis un élément de `bulletins` PAR bulletin " +
@@ -159,6 +199,20 @@ export const PROMPTS_MULTI: Record<DocType, string> = {
     "Ce fichier peut contenir une ou plusieurs pièces d'identité (parfois deux personnes), en scans ou photos. Produis " +
     "un élément de `pieces_identite` PAR pièce présente, avec nom et prénom exacts. N'invente JAMAIS une valeur. " +
     "Attention à l'ordre nom/prénom selon le pays." + SANS_CADRATIN,
+  avis_imposition:
+    "Ce fichier contient un ou plusieurs avis / bulletins d'imposition (documents des impôts), pour une ou deux " +
+    "personnes, sur une ou plusieurs années. Produis un élément de `avis_imposition` PAR avis, avec le nom exact du " +
+    "contribuable, l'année des revenus et le revenu net imposable (ou, à défaut, le revenu fiscal de référence) en " +
+    "euros par an. N'invente JAMAIS une valeur : champ absent ou illisible => value=null ou confiance basse." + SANS_CADRATIN,
+  bilan:
+    "Ce fichier contient un ou plusieurs bilans comptables / comptes de résultat d'entreprise, possiblement sur " +
+    "plusieurs exercices. Produis un élément de `bilans` PAR exercice, avec la raison sociale, la forme juridique, " +
+    "l'année de l'exercice, le chiffre d'affaires, le résultat net (bénéfice positif, perte négative) et le nom de " +
+    "l'exploitant/gérant si présent. N'invente JAMAIS une valeur. Montants en euros." + SANS_CADRATIN,
+  kbis:
+    "Ce fichier contient un ou plusieurs extraits KBIS / avis d'immatriculation d'entreprise. Produis un élément de " +
+    "`kbis` PAR extrait, avec la dénomination, la forme juridique, la date d'immatriculation (création), le nom du " +
+    "dirigeant et le numéro d'immatriculation. N'invente JAMAIS une valeur." + SANS_CADRATIN,
 };
 
 /**

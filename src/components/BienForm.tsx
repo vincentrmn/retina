@@ -207,6 +207,14 @@ export default function BienForm({ bienId }: { bienId?: number }) {
             </tbody>
           </table>
         </div>
+        <p className="ds-hint" style={{ marginTop: 14 }}>
+          <strong>Candidat indépendant.</strong> Faute de fiche de paie, le revenu est établi à partir des
+          <strong> avis d&apos;imposition</strong> (en priorité) ou des <strong>bilans / comptes de résultat</strong> :
+          on prend le revenu net annuel moyen des deux derniers exercices, divisé par douze. Par prudence (revenu moins
+          régulier qu&apos;un salaire), seuls <strong>80 %</strong> de ce revenu sont retenus pour le ratio.
+          L&apos;ancienneté correspond à l&apos;âge de l&apos;entreprise (extrait KBIS) ; une activité de moins de deux
+          ans pèse moins en stabilité. Ces réglages sont des valeurs par défaut, à affiner avec vous.
+        </p>
       </div></div>
 
       {err && <div className="ds-error">{err}</div>}
