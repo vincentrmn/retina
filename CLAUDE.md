@@ -546,6 +546,24 @@ Le Google Sheets sort du circuit : les données Tally vivent dans le Postgres RE
   Shawna (adresse postale + 225 € de charges conservées, 5 candidats) a été rattaché à APP025 via
   `{apimoId}` et le doublon créé par l'import supprimé ; la synchro ne recrée rien (0 créés).
 
+### Retours Vincent (16/07/2026, suite) — Traité, analyse en fond, Basic Auth
+
+- **Bouton « Traité »** sur chaque candidat de la page bien (suivi de Shawna : appelé, mail envoyé...) :
+  colonne `candidats.traite` (bool), `PATCH /api/candidats/[id]` `{traite}`, toggle propre sous le nom
+  (« Marquer traité » pointillé → « ✓ Traité » vert, cliquable dans les deux sens). Aucun effet score.
+- **Analyse en arrière-plan** : `POST /api/candidats/[id]/analyze` répond immédiatement, statut
+  `analyse_en_cours` (garde anti-double-lancement), analyse détachée côté serveur (Railway = process
+  persistant). Pages candidat ET bien pollent (3-4 s) tant qu'une analyse tourne ; pastille ambre
+  « Analyse en cours… ». Le webhook Tally pose aussi ce statut. On peut quitter la page, l'analyse
+  continue et le score apparaît seul.
+- **Basic Auth (fix du trou signalé par Vincent : le lien court /c/ exposait le domaine d'une app
+  ouverte)** : `src/middleware.ts` protège TOUT par mot de passe (`RETINA_USER`/`RETINA_PASSWORD`
+  sur Railway, valeurs = `bbi` / voir variables Railway) SAUF `/c/*` (lien candidat), `/api/webhooks/*`
+  (signés HMAC) et les assets. Sans variables (dev local), pas d'auth. Stopgap jetable en attendant le
+  SSO Workspace ; bonus RGPD : les dossiers ne sont plus accessibles publiquement. ⚠️ Le debug de
+  prod via l'API (méthode §LANG-STREE) exige maintenant `-u bbi:<mot de passe>`.
+- **Cadratins** : les 2 derniers `—` de textes UI (hint documents + dropzone) remplacés par des virgules.
+
 **Reste à faire / SPRINT 2 (ouvert par Vincent le 03/07/2026)** :
 1. **Employeur dominant** (constat dossier LANG-STREE) : afficher l'employeur le plus fréquent des
    bulletins (et signaler « plusieurs employeurs ») au lieu du premier trouvé. Cosmétique, sûr.

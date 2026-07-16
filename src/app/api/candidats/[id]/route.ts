@@ -51,6 +51,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       if (!STATUTS.includes(body.statut)) return NextResponse.json({ error: "Statut invalide" }, { status: 400 });
       await pool.query(`UPDATE candidats SET statut = $1 WHERE id = $2`, [body.statut, id]);
     }
+    // Suivi manuel de Shawna : candidat traité (appelé, mail envoyé...) ou non.
+    if (typeof body.traite === "boolean") {
+      await pool.query(`UPDATE candidats SET traite = $1 WHERE id = $2`, [body.traite, id]);
+    }
 
     // Validation manuelle d'une incohérence : on marque le contrôle comme ignoré
     // et on recalcule le score depuis la synthèse déjà stockée (zéro coût API).

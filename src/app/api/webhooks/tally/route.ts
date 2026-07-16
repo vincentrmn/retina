@@ -187,10 +187,12 @@ export async function POST(req: NextRequest) {
 
     // Analyse automatique en arrière-plan : on répond tout de suite à Tally
     // (timeout webhook 10 s), l'extraction prend quelques dizaines de secondes.
+    // Le statut `analyse_en_cours` permet à l'UI d'afficher la progression.
     if (stockes > 0 && hasAnthropicKey()) {
+      await pool.query(`UPDATE candidats SET statut = 'analyse_en_cours' WHERE id = $1`, [candidatId]);
       analyseCandidat(candidatId).catch(async (e) => {
         await pool
-          .query(`UPDATE candidats SET statut = 'erreur_document' WHERE id = $1 AND score IS NULL`, [candidatId])
+          .query(`UPDATE candidats SET statut = 'erreur_document' WHERE id = $1 AND statut = 'analyse_en_cours'`, [candidatId])
           .catch(() => {});
         console.error(`Webhook Tally : analyse du candidat ${candidatId} en échec :`, e);
       });

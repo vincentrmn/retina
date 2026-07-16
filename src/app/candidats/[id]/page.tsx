@@ -98,7 +98,7 @@ function DropZone({ candidatId, onDone }: { candidatId: number; onDone: () => vo
             <strong>Déposez ici tous les documents du dossier</strong>
             <span className="ds-muted">
               Salarié (fiches de paie, contrat, pièce d&apos;identité) ou indépendant (avis d&apos;imposition,
-              bilan, extrait KBIS), en vrac, pour une personne comme pour un couple — y compris un seul gros scan
+              bilan, extrait KBIS), en vrac, pour une personne comme pour un couple, y compris un seul gros scan
               qui regroupe tout. PDF ou photos, 15 Mo maximum par fichier. Vous n&apos;avez rien à trier : à
               l&apos;analyse, RETINA reconnaît chaque document et le rattache à la bonne personne.
             </span>
@@ -165,22 +165,42 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
     load();
   }, [load]);
 
+  // L'analyse tourne côté serveur : on lance, puis on polle le statut. On peut
+  // quitter la page (retour au bien, fermeture...) sans interrompre l'analyse.
   async function analyser(force: boolean) {
     setAnalysing(true);
     setErr("");
-    try {
-      const res = await fetch(`/api/candidats/${id}/analyze`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ force }),
-      });
-      const data = await res.json();
-      if (!res.ok) setErr(data.error || "Erreur pendant l'analyse");
-      await load();
-    } finally {
+    const res = await fetch(`/api/candidats/${id}/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ force }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setErr(data.error || "Erreur pendant l'analyse");
       setAnalysing(false);
+      return;
     }
+    await load(); // le statut passe à analyse_en_cours, le polling prend le relais
   }
+
+  // Polling tant qu'une analyse est en cours (lancée ici, depuis une autre page,
+  // ou par une candidature en ligne qui vient d'arriver).
+  useEffect(() => {
+    if (cand?.statut !== "analyse_en_cours") {
+      setAnalysing(false);
+      return;
+    }
+    setAnalysing(true);
+    const t = setInterval(async () => {
+      const c = await fetch(`/api/candidats/${id}`).then((x) => x.json());
+      if (c.statut !== "analyse_en_cours") {
+        setCand(c);
+        setAnalysing(false);
+      }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [cand?.statut, id]);
 
   async function supprimerDoc(docId: number) {
     if (!confirm("Supprimer ce document ?")) return;
@@ -262,13 +282,19 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
         </button>
       </div>
       {err && <div className="ds-error" style={{ marginBottom: 12 }}>{err}</div>}
+      {analysing && (
+        <p className="ds-hint" style={{ marginTop: -6, marginBottom: 12 }}>
+          L&apos;analyse tourne en arrière-plan : vous pouvez quitter cette page, elle continuera et le score
+          apparaîtra tout seul.
+        </p>
+      )}
 
       <div className="ds-card"><div className="ds-card__body">
         {cand.documents.length === 0 && <p className="ds-muted" style={{ margin: 0 }}>Aucun document déposé pour l&apos;instant.</p>}
         {cand.documents.length > 0 && (
           <p className="ds-hint" style={{ marginTop: 0 }}>
-            À l&apos;analyse, RETINA reconnaît le contenu de chaque fichier — y compris un seul gros scan qui
-            regroupe plusieurs documents (fiches de paie, contrat, pièce d&apos;identité) — et rattache chaque
+            À l&apos;analyse, RETINA reconnaît le contenu de chaque fichier, y compris un seul gros scan qui
+            regroupe plusieurs documents (fiches de paie, contrat, pièce d&apos;identité), et rattache chaque
             document à la bonne personne (A ou B) d&apos;après le nom qui y figure.
           </p>
         )}

@@ -14,6 +14,7 @@ export const DOC_TYPE_LABELS: Record<string, string> = {
 export const STATUT_LABELS: Record<string, string> = {
   en_attente: "En attente",
   analyse: "Analysé",
+  analyse_en_cours: "Analyse en cours",
   erreur_document: "Erreur document",
 };
 

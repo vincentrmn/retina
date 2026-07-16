@@ -13,6 +13,7 @@ type CandidatRow = {
   nb_documents: number;
   source: string | null;
   email: string | null;
+  traite: boolean;
 };
 
 type BienDetail = {
@@ -52,7 +53,9 @@ function ScorePill({ score }: { score: Score | null }) {
 /** Statut du dossier en une pastille discrète accolée au nom. */
 function StatutPill({ statut, score }: { statut: string; score: Score | null }) {
   const s =
-    score != null
+    statut === "analyse_en_cours"
+      ? { bg: "#fff4e0", fg: "#9a6700", label: "Analyse en cours…" }
+      : score != null
       ? { bg: "#e3f7f0", fg: "#07875f", label: "Analysé" }
       : statut === "erreur_document"
       ? { bg: "#fbeaea", fg: "#b3261e", label: "Erreur document" }
@@ -65,6 +68,36 @@ function StatutPill({ statut, score }: { statut: string; score: Score | null }) 
       <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: s.fg, marginRight: 6 }} />
       {s.label}
     </span>
+  );
+}
+
+/**
+ * Suivi de Shawna : le candidat a-t-il été traité (appelé, mail envoyé...) ?
+ * Un clic bascule, un clic sur l'état coché revient en arrière (erreur de
+ * manipulation). Purement indicatif, aucun effet sur le score.
+ */
+function TraiteButton({ traite, busy, onToggle }: { traite: boolean; busy: boolean; onToggle: () => void }) {
+  return (
+    <button
+      className="ds-pill"
+      disabled={busy}
+      title={traite ? "Cliquer pour remettre ce candidat en non traité" : "Marquer ce candidat comme traité (appelé, mail envoyé...)"}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggle();
+      }}
+      style={{
+        cursor: "pointer",
+        border: traite ? "1px solid #07875f" : "1px dashed var(--ds-line-2, var(--ds-line))",
+        background: traite ? "#e3f7f0" : "transparent",
+        color: traite ? "#07875f" : "var(--ds-ink-soft)",
+        fontWeight: 600,
+        opacity: busy ? 0.5 : 1,
+      }}
+    >
+      {traite ? "✓ Traité" : "Marquer traité"}
+    </button>
   );
 }
 
@@ -93,6 +126,7 @@ export default function BienPage({ params }: { params: { id: string } }) {
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [traiteBusy, setTraiteBusy] = useState<number | null>(null);
   const router = useRouter();
 
   const load = useCallback(async () => {
@@ -104,6 +138,29 @@ export default function BienPage({ params }: { params: { id: string } }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Une analyse tourne en arrière-plan (lancée ici ou par une candidature en
+  // ligne) : on rafraîchit la liste jusqu'à ce qu'elle se termine.
+  const enCours = bien?.candidats.some((c) => c.statut === "analyse_en_cours") ?? false;
+  useEffect(() => {
+    if (!enCours) return;
+    const t = setInterval(load, 4000);
+    return () => clearInterval(t);
+  }, [enCours, load]);
+
+  async function toggleTraite(c: CandidatRow) {
+    setTraiteBusy(c.id);
+    try {
+      await fetch(`/api/candidats/${c.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ traite: !c.traite }),
+      });
+      await load();
+    } finally {
+      setTraiteBusy(null);
+    }
+  }
 
   async function ajouterCandidat() {
     if (!nom.trim()) return;
@@ -250,6 +307,9 @@ export default function BienPage({ params }: { params: { id: string } }) {
                 Éliminé sur : {c.score.criteres.filter((cr) => cr.eliminatoire).map((cr) => cr.label.toLowerCase()).join(", ")}
               </div>
             )}
+            <div style={{ marginTop: 6 }}>
+              <TraiteButton traite={c.traite} busy={traiteBusy === c.id} onToggle={() => toggleTraite(c)} />
+            </div>
           </div>
           <div className="ds-row__actions">
             <ScorePill score={c.score} />
