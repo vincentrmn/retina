@@ -991,3 +991,12 @@ input.crit-num::-webkit-outer-spin-button, input.crit-num::-webkit-inner-spin-bu
 .score-tbl__crit { font-weight: 700; white-space: nowrap; }
 .score-tbl__pts { text-align: center; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .score-tbl tbody tr:last-child td { border-bottom: 0; }
+
+/* Lignes de liste (biens, candidats) : sur mobile, un long titre (les biens
+   importés d'Apimo portent le titre de l'annonce) ne doit pas être écrasé par
+   les pastilles — les actions passent sous le titre, sur toute la largeur. */
+@media (max-width: 640px) {
+  .ds-row { flex-wrap: wrap; }
+  .ds-row__main { flex: 1 1 100%; }
+  .ds-row__actions { flex: 1 1 100%; justify-content: flex-start; }
+}

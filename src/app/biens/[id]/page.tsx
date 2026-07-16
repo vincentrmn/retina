@@ -11,6 +11,8 @@ type CandidatRow = {
   score: Score | null;
   analysed_at: string | null;
   nb_documents: number;
+  source: string | null;
+  email: string | null;
 };
 
 type BienDetail = {
@@ -22,6 +24,7 @@ type BienDetail = {
   candidats: CandidatRow[];
   nb_candidats: number;
   nb_analyses: number;
+  tally_url: string | null;
   error?: string;
 };
 
@@ -70,6 +73,7 @@ export default function BienPage({ params }: { params: { id: string } }) {
   const [nom, setNom] = useState("");
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [copied, setCopied] = useState(false);
   const router = useRouter();
 
   const load = useCallback(async () => {
@@ -160,6 +164,32 @@ export default function BienPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
+      {/* Lien de candidature en ligne (formulaire Tally rattaché à ce bien) */}
+      {bien.tally_url && (
+        <div className="ds-card" style={{ marginTop: 14 }}>
+          <div className="ds-card__head">Candidature en ligne</div>
+          <div className="ds-card__body">
+            <p className="ds-hint" style={{ marginTop: 0 }}>
+              Envoyez ce lien aux candidats intéressés par ce bien : ils remplissent leurs coordonnées et déposent
+              leurs documents eux-mêmes. Le dossier apparaît ici automatiquement, déjà analysé.
+            </p>
+            <div className="ds-toolbar">
+              <input className="ds-input" style={{ flex: 1, minWidth: 200 }} type="text" readOnly value={bien.tally_url} onFocus={(e) => e.target.select()} />
+              <button
+                className="ds-btn ds-btn--secondary"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(bien.tally_url!);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+              >
+                {copied ? "Copié !" : "Copier le lien"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="ds-section">
         <span className="ds-h2">Candidats{bien.candidats.length ? ` (${bien.candidats.length}, dont ${nbAnalyses} analysé${nbAnalyses > 1 ? "s" : ""})` : ""}</span>
         <span className="ds-rule" />
@@ -197,6 +227,8 @@ export default function BienPage({ params }: { params: { id: string } }) {
             </div>
             <div className="ds-row__sub">
               {STATUT_LABELS[c.statut] ?? c.statut} · {c.nb_documents} document{c.nb_documents > 1 ? "s" : ""}
+              {c.source === "tally" ? " · candidature en ligne" : ""}
+              {c.email ? ` · ${c.email}` : ""}
               {c.score?.ratio != null ? ` · revenus ${c.score.ratio} fois le coût du logement` : ""}
               {c.score?.eliminatoire ? (
                 <span style={{ color: "#b3261e", fontWeight: 600 }}>

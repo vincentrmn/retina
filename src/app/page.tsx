@@ -9,6 +9,7 @@ type Bien = {
   loyer: string;
   charges: string;
   criteres: any;
+  apimo_id: number | null;
   nb_candidats: number;
   nb_analyses: number;
 };
@@ -16,6 +17,8 @@ type Bien = {
 export default function Dashboard() {
   const [biens, setBiens] = useState<Bien[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
   const router = useRouter();
 
   async function load() {
@@ -34,6 +37,26 @@ export default function Dashboard() {
     if (!confirm("Supprimer ce bien et tous ses dossiers candidats ?")) return;
     await fetch(`/api/biens/${id}`, { method: "DELETE" });
     load();
+  }
+
+  async function synchroniserApimo() {
+    setSyncing(true);
+    setSyncMsg("");
+    try {
+      const r = await fetch("/api/apimo/sync", { method: "POST" }).then((x) => x.json());
+      if (r.error) setSyncMsg(r.error);
+      else {
+        const parts = [];
+        if (r.crees) parts.push(`${r.crees} bien${r.crees > 1 ? "s" : ""} importé${r.crees > 1 ? "s" : ""}`);
+        if (r.maj) parts.push(`${r.maj} mis à jour`);
+        setSyncMsg(parts.length ? parts.join(", ") + "." : `À jour : les ${r.total} biens en location d'Apimo sont déjà dans RETINA.`);
+      }
+      load();
+    } catch (e: any) {
+      setSyncMsg("Synchronisation impossible : " + (e?.message ?? e));
+    } finally {
+      setSyncing(false);
+    }
   }
 
   return (
@@ -77,10 +100,14 @@ export default function Dashboard() {
       <div className="ds-section">
         <span className="ds-h2">Biens à la location</span>
         <span className="ds-rule" />
+        <button className="ds-btn ds-btn--secondary" onClick={synchroniserApimo} disabled={syncing}>
+          {syncing ? "Synchronisation…" : "Synchroniser Apimo"}
+        </button>
         <button className="ds-btn ds-btn--primary" onClick={() => router.push("/biens/new")}>
           + Nouveau bien
         </button>
       </div>
+      {syncMsg && <p className="ds-hint" style={{ marginTop: -4, marginBottom: 12 }}>{syncMsg}</p>}
 
       {loaded && biens.length === 0 && (
         <div className="ds-empty">
@@ -99,6 +126,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="ds-row__actions">
+            {b.apimo_id != null && <span className="ds-pill">Apimo</span>}
             <span className="ds-pill">
               {b.nb_candidats} candidat{b.nb_candidats > 1 ? "s" : ""}
               {b.nb_candidats > 0 ? ` · ${b.nb_analyses} analysé${b.nb_analyses > 1 ? "s" : ""}` : ""}

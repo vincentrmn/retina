@@ -12,7 +12,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const { rows } = await pool.query(`SELECT * FROM biens WHERE id = $1`, [id]);
     if (!rows.length) return NextResponse.json({ error: "Bien introuvable" }, { status: 404 });
     const candidats = await pool.query(
-      `SELECT c.id, c.nom, c.statut, c.score, c.analysed_at, c.created_at,
+      `SELECT c.id, c.nom, c.statut, c.score, c.analysed_at, c.created_at, c.source, c.email, c.telephone,
               COUNT(d.id)::int AS nb_documents
          FROM candidats c
          LEFT JOIN documents d ON d.candidat_id = c.id
@@ -24,7 +24,18 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     // Un candidat est « analysé » dès qu'il a un score, même si un document a
     // échoué (statut erreur_document mais score calculé sur les docs restants).
     const nbAnalyses = candidats.rows.filter((c) => c.score != null).length;
-    return NextResponse.json({ ...rows[0], candidats: candidats.rows, nb_candidats: candidats.rows.length, nb_analyses: nbAnalyses });
+    // Lien de candidature en ligne : le formulaire Tally unique, avec le champ
+    // caché `bien` qui rattache chaque soumission à ce bien.
+    const tallyUrl = process.env.TALLY_FORM_ID
+      ? `https://tally.so/r/${process.env.TALLY_FORM_ID}?bien=${id}`
+      : null;
+    return NextResponse.json({
+      ...rows[0],
+      candidats: candidats.rows,
+      nb_candidats: candidats.rows.length,
+      nb_analyses: nbAnalyses,
+      tally_url: tallyUrl,
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

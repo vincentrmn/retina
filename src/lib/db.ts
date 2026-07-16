@@ -78,6 +78,25 @@ export function ensureSchema(): Promise<void> {
         );
       `);
       await pool.query(`CREATE INDEX IF NOT EXISTS documents_candidat_idx ON documents (candidat_id);`);
+
+      // Intégration Apimo : les biens à la location importés depuis l'API
+      // Apimo portent leur id Apimo (dédoublonnage à la synchro).
+      await pool.query(`ALTER TABLE biens ADD COLUMN IF NOT EXISTS apimo_id BIGINT;`);
+      await pool.query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS biens_apimo_idx ON biens (apimo_id) WHERE apimo_id IS NOT NULL;`
+      );
+
+      // Intégration Tally : les candidats arrivent aussi par le formulaire de
+      // candidature en ligne (webhook). email/telephone pour recontacter (et
+      // demain synchroniser vers Pipedrive), tally_submission_id pour
+      // l'idempotence (Tally rejoue les webhooks en cas d'échec).
+      await pool.query(`ALTER TABLE candidats ADD COLUMN IF NOT EXISTS email TEXT;`);
+      await pool.query(`ALTER TABLE candidats ADD COLUMN IF NOT EXISTS telephone TEXT;`);
+      await pool.query(`ALTER TABLE candidats ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manuel';`);
+      await pool.query(`ALTER TABLE candidats ADD COLUMN IF NOT EXISTS tally_submission_id TEXT;`);
+      await pool.query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS candidats_tally_submission_idx ON candidats (tally_submission_id) WHERE tally_submission_id IS NOT NULL;`
+      );
     })();
   }
   return global._retinaSchema;
