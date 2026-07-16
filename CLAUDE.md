@@ -478,12 +478,23 @@ Le Google Sheets sort du circuit : les données Tally vivent dans le Postgres RE
   les biens où le partenaire « Brouwers AI » est activé MANUELLEMENT sur la fiche (4 biens location
   exposés au 16/07). Quota 1000 appels.
 - **Formulaire Tally unique** : `https://tally.so/r/ob1NPX` (compte vincent@korr.lu, créé via MCP
-  Tally). UN formulaire pour tous les biens, rattaché par **champ caché `bien`** (id RETINA) porté
-  par l'URL — PAS un formulaire par bien (zéro dérive, un seul webhook). Champs : nom, email,
-  téléphone, seul/à deux (2ᵉ nom affiché par logique conditionnelle), **upload multiple** (PDF/JPEG/
-  PNG/WebP/HEIC, 10 Mo max par fichier = plafond du plan Tally gratuit, 20 fichiers max), CAPTCHA
-  anti-spam. La page bien affiche le lien copiable (carte « Candidature en ligne », construite
-  depuis `TALLY_FORM_ID` côté serveur).
+  Tally). UN formulaire pour tous les biens, rattaché par **champs cachés `bien`** (id RETINA) et
+  **`adresse`** (affichée dans le texte d'accueil par mention) portés par l'URL — PAS un formulaire
+  par bien (zéro dérive, un seul webhook). **Refondu (16/07 soir) sur le modèle exact du
+  « Questionnaire candidat location » existant (`XxyprV`, celui qui alimentait le Google Sheets)** :
+  même branding (logo Brouwers, cover, bouton « Commencer »), mêmes pages — consentement RGPD
+  (case obligatoire), identité complète par candidat (nom, prénom, naissance, email, téléphone,
+  adresse postale ; section « second co-titulaire » en logique conditionnelle), situation
+  professionnelle et revenus déclarés (x2), projet locatif (motif, date d'entrée, durée, occupants,
+  animaux), « à propos » — PLUS la page « 05. Documents » : **upload multiple** (PDF/JPEG/PNG/WebP/
+  HEIC, 10 Mo max par fichier = plafond du plan Tally gratuit, 20 fichiers max) et CAPTCHA anti-spam.
+  ⚠️ create_blocks du MCP : max 10 groupes par appel. La page bien affiche le lien copiable (carte
+  « Candidature en ligne », construite depuis `TALLY_FORM_ID` côté serveur).
+- **Toutes les réponses du questionnaire sont archivées** dans `candidats.tally_answers` (JSONB,
+  libellé + valeur lisible, ids d'options résolus en texte) et affichées en carte « Réponses du
+  questionnaire » sur la fiche candidat — le Google Sheets est entièrement remplacé. Le webhook
+  apparie les personnes par les paires de questions « Nom »/« Prénom » (candidat principal puis
+  second co-titulaire) pour nommer le dossier.
 - **Webhook** (`POST /api/webhooks/tally`) : signature **HMAC-SHA256 base64 vérifiée**
   (`TALLY_SIGNING_SECRET`, en-tête `tally-signature`) — sans secret configuré, tout est refusé.
   **Idempotence** par `tally_submission_id` (index unique : Tally rejoue les webhooks en échec).

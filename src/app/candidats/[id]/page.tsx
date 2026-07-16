@@ -18,6 +18,10 @@ type CandidatDetail = {
   criteres: any;
   documents: DocumentMeta[];
   completude: CompletudeItem[] | null;
+  email: string | null;
+  telephone: string | null;
+  source: string | null;
+  tally_answers: { label: string; value: string }[] | null;
   error?: string;
 };
 
@@ -496,6 +500,27 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
                 );
               })}
             </div>
+          </div></div>
+        </>
+      )}
+
+      {/* ── Réponses du questionnaire de candidature en ligne ─────────────── */}
+      {cand.tally_answers && cand.tally_answers.length > 0 && (
+        <>
+          <div className="ds-section"><span className="ds-h2">Réponses du questionnaire</span><span className="ds-rule" /></div>
+          <div className="ds-card"><div className="ds-card__body">
+            <div className="score-list">
+              {cand.tally_answers.map((r, i) => (
+                <div className="score-row" key={i}>
+                  <span className="score-row__label">{r.label}</span>
+                  <span className="score-row__detail">{r.value}</span>
+                </div>
+              ))}
+            </div>
+            <p className="ds-hint" style={{ marginBottom: 0 }}>
+              Réponses déclarées par le candidat dans le formulaire en ligne. Le score, lui, est calculé
+              uniquement à partir des documents fournis.
+            </p>
           </div></div>
         </>
       )}

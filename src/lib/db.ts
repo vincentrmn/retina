@@ -94,6 +94,9 @@ export function ensureSchema(): Promise<void> {
       await pool.query(`ALTER TABLE candidats ADD COLUMN IF NOT EXISTS telephone TEXT;`);
       await pool.query(`ALTER TABLE candidats ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manuel';`);
       await pool.query(`ALTER TABLE candidats ADD COLUMN IF NOT EXISTS tally_submission_id TEXT;`);
+      // Toutes les réponses du questionnaire (situation déclarée, projet
+      // locatif...) : le Postgres RETINA remplace le Google Sheets.
+      await pool.query(`ALTER TABLE candidats ADD COLUMN IF NOT EXISTS tally_answers JSONB;`);
       await pool.query(
         `CREATE UNIQUE INDEX IF NOT EXISTS candidats_tally_submission_idx ON candidats (tally_submission_id) WHERE tally_submission_id IS NOT NULL;`
       );

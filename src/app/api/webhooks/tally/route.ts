@@ -38,13 +38,63 @@ function texte(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
-/** Concatène les noms saisis (personne 1 + éventuelle personne 2) en nom de dossier. */
+/**
+ * Nom du dossier depuis le questionnaire : les questions « Nom » et « Prénom »
+ * existent pour le candidat principal et (masquées par logique conditionnelle)
+ * pour le second co-titulaire — on apparie par ordre d'apparition.
+ */
 function nomDossier(fields: TallyField[]): string {
-  const noms = fields
+  const par = (motif: RegExp) =>
+    fields.filter((f) => f.type === "INPUT_TEXT" && motif.test(f.label.trim())).map((f) => texte(f.value));
+  const noms = par(/^nom$/i);
+  const prenoms = par(/^pr[ée]nom$/i);
+  const personnes: string[] = [];
+  for (let i = 0; i < Math.max(noms.length, prenoms.length); i++) {
+    const complet = [prenoms[i], noms[i]].filter(Boolean).join(" ").trim();
+    if (complet) personnes.push(complet);
+  }
+  if (personnes.length) return personnes.join(" et ");
+  // Repli (ancien formulaire) : tout champ texte dont le libellé contient « nom ».
+  return fields
     .filter((f) => f.type === "INPUT_TEXT" && /nom/i.test(f.label))
     .map((f) => texte(f.value))
-    .filter(Boolean);
-  return noms.join(" et ");
+    .filter(Boolean)
+    .join(" et ");
+}
+
+/**
+ * Valeur lisible d'un champ Tally : les choix arrivent en ids d'option, le
+ * payload porte la liste `options` qui permet de retrouver le texte.
+ */
+function valeurLisible(f: TallyField): string | null {
+  const v = f.value;
+  if (v == null) return null;
+  if (typeof v === "string") return v.trim() || null;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) {
+    const options = (f as any).options as { id: string; text: string }[] | undefined;
+    const parts = v
+      .map((x) => {
+        if (typeof x === "string") return options?.find((o) => o.id === x)?.text ?? x;
+        if (x && typeof x === "object" && "name" in x) return String((x as any).name);
+        return String(x);
+      })
+      .filter(Boolean);
+    return parts.length ? parts.join(", ") : null;
+  }
+  return null;
+}
+
+/**
+ * Réponses du questionnaire à archiver en base (hors fichiers et champs
+ * cachés ; la case de consentement, dont la valeur répète le libellé, est
+ * ignorée aussi — le consentement est implicite dans la soumission).
+ */
+function reponses(fields: TallyField[]): { label: string; value: string }[] {
+  return fields
+    .filter((f) => f.type !== "FILE_UPLOAD" && f.type !== "HIDDEN_FIELDS")
+    .map((f) => ({ label: f.label, value: valeurLisible(f) }))
+    .filter((r): r is { label: string; value: string } => !!r.value && r.value !== r.label);
 }
 
 export async function POST(req: NextRequest) {
@@ -89,11 +139,11 @@ export async function POST(req: NextRequest) {
     const nom = nomDossier(fields) || email || "Candidature en ligne";
 
     const insert = await pool.query(
-      `INSERT INTO candidats (bien_id, nom, email, telephone, source, tally_submission_id)
-       VALUES ($1,$2,$3,$4,'tally',$5)
+      `INSERT INTO candidats (bien_id, nom, email, telephone, source, tally_submission_id, tally_answers)
+       VALUES ($1,$2,$3,$4,'tally',$5,$6)
        ON CONFLICT (tally_submission_id) WHERE tally_submission_id IS NOT NULL DO NOTHING
        RETURNING id`,
-      [bienId, nom, email, telephone, submissionId]
+      [bienId, nom, email, telephone, submissionId, JSON.stringify(reponses(fields))]
     );
     if (!insert.rows.length) {
       // Course entre deux livraisons du même webhook : l'autre a gagné.

@@ -25,9 +25,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     // échoué (statut erreur_document mais score calculé sur les docs restants).
     const nbAnalyses = candidats.rows.filter((c) => c.score != null).length;
     // Lien de candidature en ligne : le formulaire Tally unique, avec le champ
-    // caché `bien` qui rattache chaque soumission à ce bien.
+    // caché `bien` qui rattache chaque soumission à ce bien et `adresse` qui
+    // s'affiche dans le texte d'accueil du formulaire.
     const tallyUrl = process.env.TALLY_FORM_ID
-      ? `https://tally.so/r/${process.env.TALLY_FORM_ID}?bien=${id}`
+      ? `https://tally.so/r/${process.env.TALLY_FORM_ID}?bien=${id}&adresse=${encodeURIComponent(rows[0].adresse)}`
       : null;
     return NextResponse.json({
       ...rows[0],
