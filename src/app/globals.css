@@ -1000,3 +1000,27 @@ input.crit-num::-webkit-outer-spin-button, input.crit-num::-webkit-inner-spin-bu
   .ds-row__main { flex: 1 1 100%; }
   .ds-row__actions { flex: 1 1 100%; justify-content: flex-start; }
 }
+
+/* Marque RETINA : même police et graisse que les titres du formulaire Tally
+   (Poppins ExtraBold 800, auto-hébergée), et hauteur des capitales calée sur
+   les 54px du logo Brouwers (cap-height Poppins = 0,70 em). */
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("/fonts/poppins-800.woff2") format("woff2");
+}
+.brand-home {
+  font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+  font-size: 76px; /* encre des capitales = 54px = hauteur du logo */
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+/* Mobile : le couple logo + RETINA est réduit d'un tiers pour tenir en largeur,
+   en gardant l'égalité des hauteurs (36px). */
+@media (max-width: 760px) {
+  .brand-home { font-size: 50px; }
+  .brand-home::before { width: 87px; height: 36px; }
+}
