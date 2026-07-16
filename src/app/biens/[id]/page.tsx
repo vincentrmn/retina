@@ -87,19 +87,41 @@ function TraiteButton({ traite, onToggle }: { traite: boolean; onToggle: () => v
         onToggle();
       }}
       style={{
+        // Géométrie ENTIÈREMENT figée : largeur ET hauteur fixes, case du
+        // check à taille fixe, libellé ancré à gauche dans une case fixe.
+        // Seuls le texte, la couleur et le check changent, quel que soit le
+        // navigateur ou la police (le glyphe ✓ peut sinon changer la hauteur).
         cursor: "pointer",
-        // Même gabarit dans les deux états (largeur fixe, texte centré, même
-        // bordure) : seuls le texte, la couleur et le check changent.
-        width: 108,
+        width: 112,
+        height: 24,
+        boxSizing: "border-box",
         display: "inline-flex",
+        alignItems: "center",
         justifyContent: "center",
+        gap: 0,
+        lineHeight: 1,
         border: `1px solid ${traite ? "#07875f" : "var(--ds-line-2, var(--ds-line))"}`,
         background: traite ? "#e3f7f0" : "transparent",
         color: traite ? "#07875f" : "var(--ds-ink-soft)",
         fontWeight: 600,
       }}
     >
-      {traite ? "✓ Traité" : "Non traité"}
+      <span
+        style={{
+          width: 14,
+          height: 14,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 11,
+          lineHeight: 1,
+          overflow: "hidden",
+          flex: "0 0 auto",
+        }}
+      >
+        {traite ? "✓" : ""}
+      </span>
+      <span style={{ width: 68, textAlign: "left", flex: "0 0 auto" }}>{traite ? "Traité" : "Non traité"}</span>
     </button>
   );
 }
@@ -311,7 +333,9 @@ export default function BienPage({ params }: { params: { id: string } }) {
                 Éliminé sur : {c.score.criteres.filter((cr) => cr.eliminatoire).map((cr) => cr.label.toLowerCase()).join(", ")}
               </div>
             )}
-            <div style={{ marginTop: 6 }}>
+            {/* display:flex : le bouton n'est plus aligné sur la ligne de base
+                du texte, dont la position varie selon le contenu (le check). */}
+            <div style={{ marginTop: 6, display: "flex" }}>
               <TraiteButton traite={c.traite} onToggle={() => toggleTraite(c)} />
             </div>
           </div>
