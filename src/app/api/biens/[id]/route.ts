@@ -5,7 +5,7 @@ import { normalizeCriteres, type CoherenceCheck, type SynthesePersonne } from "@
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
     await ensureSchema();
     const id = Number(params.id);
@@ -24,12 +24,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     // Un candidat est « analysé » dès qu'il a un score, même si un document a
     // échoué (statut erreur_document mais score calculé sur les docs restants).
     const nbAnalyses = candidats.rows.filter((c) => c.score != null).length;
-    // Lien de candidature en ligne : lien court RETINA (/c/12) qui redirige
-    // vers le formulaire Tally avec les champs cachés du bien. Plus agréable à
-    // envoyer qu'une URL Tally chargée de l'adresse encodée.
-    const proto = req.headers.get("x-forwarded-proto") ?? "https";
-    const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-    const tallyUrl = process.env.TALLY_FORM_ID && host ? `${proto}://${host}/c/${id}` : null;
+    // Lien de candidature en ligne : l'URL Tally directe (domaine tally.so,
+    // décision Vincent : ne pas exposer le domaine RETINA aux candidats).
+    // Les champs cachés rattachent la soumission au bien et affichent
+    // l'adresse dans le texte d'accueil du formulaire.
+    const tallyUrl = process.env.TALLY_FORM_ID
+      ? `https://tally.so/r/${process.env.TALLY_FORM_ID}?bien=${id}&adresse=${encodeURIComponent(rows[0].adresse)}`
+      : null;
     return NextResponse.json({
       ...rows[0],
       candidats: candidats.rows,

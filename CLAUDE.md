@@ -527,10 +527,9 @@ Le Google Sheets sort du circuit : les données Tally vivent dans le Postgres RE
 
 ### Retours Vincent (16/07/2026 soir) — lien court, devises étrangères, zip
 
-- **Lien court de candidature** : la carte « Candidature en ligne » affiche `https://retina-…/c/<id>`
-  (route `src/app/c/[id]/route.ts`, redirection 302 vers `tally.so/r/<form>?bien=&adresse=`) au lieu
-  de l'URL Tally chargée de l'adresse encodée. Bonus : si le formulaire change un jour, les liens
-  déjà envoyés continuent de marcher. L'hôte vient des en-têtes `x-forwarded-host`/`host`.
+- **Lien court de candidature** (`/c/<id>`, redirection 302 vers Tally) : livré ce soir-là puis
+  **SUPPRIMÉ dans la foulée** (voir « Retours Vincent, suite » plus bas) — il exposait le domaine
+  RETINA aux candidats. La carte « Candidature en ligne » affiche l'URL Tally directe.
 - **Devises étrangères (bug réel remonté par Vincent : fiche de paie en MUR comptée en euros)** :
   champ `devise` (code ISO, `{value, confiance}`) ajouté aux schémas bulletins/contrat/avis/bilans,
   prompts explicites « montants TELS QUELS dans la devise du document, ne convertis JAMAIS en
@@ -550,18 +549,20 @@ Le Google Sheets sort du circuit : les données Tally vivent dans le Postgres RE
 
 - **Bouton « Traité »** sur chaque candidat de la page bien (suivi de Shawna : appelé, mail envoyé...) :
   colonne `candidats.traite` (bool), `PATCH /api/candidats/[id]` `{traite}`, toggle propre sous le nom
-  (« Marquer traité » pointillé → « ✓ Traité » vert, cliquable dans les deux sens). Aucun effet score.
+  (« Non traité » pointillé → « ✓ Traité » vert, cliquable dans les deux sens). **Bascule optimiste**
+  (l'UI change immédiatement, la sauvegarde part en fond, retour arrière si échec) : pas de
+  rechargement de la liste, donc pas de lag. Aucun effet score.
 - **Analyse en arrière-plan** : `POST /api/candidats/[id]/analyze` répond immédiatement, statut
   `analyse_en_cours` (garde anti-double-lancement), analyse détachée côté serveur (Railway = process
   persistant). Pages candidat ET bien pollent (3-4 s) tant qu'une analyse tourne ; pastille ambre
   « Analyse en cours… ». Le webhook Tally pose aussi ce statut. On peut quitter la page, l'analyse
   continue et le score apparaît seul.
-- **Basic Auth (fix du trou signalé par Vincent : le lien court /c/ exposait le domaine d'une app
-  ouverte)** : `src/middleware.ts` protège TOUT par mot de passe (`RETINA_USER`/`RETINA_PASSWORD`
-  sur Railway, valeurs = `bbi` / voir variables Railway) SAUF `/c/*` (lien candidat), `/api/webhooks/*`
-  (signés HMAC) et les assets. Sans variables (dev local), pas d'auth. Stopgap jetable en attendant le
-  SSO Workspace ; bonus RGPD : les dossiers ne sont plus accessibles publiquement. ⚠️ Le debug de
-  prod via l'API (méthode §LANG-STREE) exige maintenant `-u bbi:<mot de passe>`.
+- **Lien court /c/ SUPPRIMÉ, Basic Auth SUPPRIMÉE (décision Vincent, même soir)** : le lien court
+  exposait le domaine RETINA aux candidats (app ouverte). Première réponse = middleware Basic Auth,
+  mais Vincent a tranché : pas d'auth avant Workspace, le vrai souci était l'URL. Donc retour au
+  lien Tally DIRECT (`tally.so/r/<form>?bien=&adresse=`, long mais domaine neutre) sur la page bien,
+  route `/c/[id]` et `src/middleware.ts` supprimés, variables `RETINA_USER`/`RETINA_PASSWORD`
+  retirées de Railway. L'app reste ouverte : ne pas diffuser le domaine RETINA aux candidats.
 - **Cadratins** : les 2 derniers `—` de textes UI (hint documents + dropzone) remplacés par des virgules.
 
 **Reste à faire / SPRINT 2 (ouvert par Vincent le 03/07/2026)** :

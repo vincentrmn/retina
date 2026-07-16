@@ -76,11 +76,10 @@ function StatutPill({ statut, score }: { statut: string; score: Score | null }) 
  * Un clic bascule, un clic sur l'état coché revient en arrière (erreur de
  * manipulation). Purement indicatif, aucun effet sur le score.
  */
-function TraiteButton({ traite, busy, onToggle }: { traite: boolean; busy: boolean; onToggle: () => void }) {
+function TraiteButton({ traite, onToggle }: { traite: boolean; onToggle: () => void }) {
   return (
     <button
       className="ds-pill"
-      disabled={busy}
       title={traite ? "Cliquer pour remettre ce candidat en non traité" : "Marquer ce candidat comme traité (appelé, mail envoyé...)"}
       onClick={(e) => {
         e.preventDefault();
@@ -93,10 +92,9 @@ function TraiteButton({ traite, busy, onToggle }: { traite: boolean; busy: boole
         background: traite ? "#e3f7f0" : "transparent",
         color: traite ? "#07875f" : "var(--ds-ink-soft)",
         fontWeight: 600,
-        opacity: busy ? 0.5 : 1,
       }}
     >
-      {traite ? "✓ Traité" : "Marquer traité"}
+      {traite ? "✓ Traité" : "Non traité"}
     </button>
   );
 }
@@ -126,7 +124,6 @@ export default function BienPage({ params }: { params: { id: string } }) {
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [traiteBusy, setTraiteBusy] = useState<number | null>(null);
   const router = useRouter();
 
   const load = useCallback(async () => {
@@ -148,18 +145,20 @@ export default function BienPage({ params }: { params: { id: string } }) {
     return () => clearInterval(t);
   }, [enCours, load]);
 
+  // Bascule optimiste : l'état change à l'écran immédiatement, la sauvegarde
+  // part en arrière-plan (retour en arrière silencieux si elle échoue).
   async function toggleTraite(c: CandidatRow) {
-    setTraiteBusy(c.id);
-    try {
-      await fetch(`/api/candidats/${c.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ traite: !c.traite }),
-      });
-      await load();
-    } finally {
-      setTraiteBusy(null);
-    }
+    const poser = (valeur: boolean) =>
+      setBien((prev) =>
+        prev ? { ...prev, candidats: prev.candidats.map((x) => (x.id === c.id ? { ...x, traite: valeur } : x)) } : prev
+      );
+    poser(!c.traite);
+    const res = await fetch(`/api/candidats/${c.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ traite: !c.traite }),
+    }).catch(() => null);
+    if (!res || !res.ok) poser(c.traite);
   }
 
   async function ajouterCandidat() {
@@ -308,7 +307,7 @@ export default function BienPage({ params }: { params: { id: string } }) {
               </div>
             )}
             <div style={{ marginTop: 6 }}>
-              <TraiteButton traite={c.traite} busy={traiteBusy === c.id} onToggle={() => toggleTraite(c)} />
+              <TraiteButton traite={c.traite} onToggle={() => toggleTraite(c)} />
             </div>
           </div>
           <div className="ds-row__actions">
