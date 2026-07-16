@@ -125,6 +125,8 @@ export type BulletinPaie = {
   periode: Champ;
   salaire_net_mensuel: Champ<number>;
   salaire_brut_mensuel: Champ<number>;
+  /** Code ISO de la devise des montants (EUR, MUR...). Absent sur les anciennes extractions = EUR. */
+  devise?: Champ;
   intitule_poste: Champ;
   date_entree: Champ; // YYYY-MM-DD
 };
@@ -144,6 +146,8 @@ export type ExtractionContrat = {
   fin_periode_essai: Champ; // YYYY-MM-DD
   salaire_mensuel: Champ<number>;
   salaire_est_brut: Champ<boolean>;
+  /** Code ISO de la devise du salaire du contrat. Absent sur les anciennes extractions = EUR. */
+  devise?: Champ;
   intitule_poste: Champ;
   remarques?: string | null;
 };
@@ -164,7 +168,9 @@ export type ExtractionIdentite = {
 export type AvisImposition = {
   nom_complet: Champ;
   annee: Champ; // année des revenus (AAAA)
-  revenu_net_annuel: Champ<number>; // revenu net imposable / revenu fiscal de référence, €/an
+  revenu_net_annuel: Champ<number>; // revenu net imposable / revenu fiscal de référence, par an
+  /** Code ISO de la devise. Absent sur les anciennes extractions = EUR. */
+  devise?: Champ;
 };
 
 /** Bilan + compte de résultat d'un exercice. */
@@ -173,8 +179,10 @@ export type Bilan = {
   denomination: Champ; // raison sociale de l'entreprise
   forme_juridique: Champ; // ex : SARL, SAS, entreprise individuelle, profession libérale
   annee: Champ; // exercice (AAAA)
-  chiffre_affaires: Champ<number>; // €/an
-  resultat_net: Champ<number>; // bénéfice (ou perte, négatif) net, €/an
+  chiffre_affaires: Champ<number>; // par an, dans la devise du document
+  resultat_net: Champ<number>; // bénéfice (ou perte, négatif) net, par an
+  /** Code ISO de la devise. Absent sur les anciennes extractions = EUR. */
+  devise?: Champ;
   date_creation: Champ; // YYYY-MM-DD si présent
 };
 

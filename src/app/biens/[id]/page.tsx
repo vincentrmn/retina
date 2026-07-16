@@ -169,7 +169,7 @@ export default function BienPage({ params }: { params: { id: string } }) {
         <div className="ds-card" style={{ marginTop: 14 }}>
           <div className="ds-card__head">Candidature en ligne</div>
           <div className="ds-card__body">
-            <p className="ds-hint" style={{ marginTop: 0 }}>
+            <p className="ds-hint" style={{ marginTop: 0, marginBottom: 14 }}>
               Envoyez ce lien aux candidats intéressés par ce bien : ils remplissent leurs coordonnées et déposent
               leurs documents eux-mêmes. Le dossier apparaît ici automatiquement, déjà analysé.
             </p>

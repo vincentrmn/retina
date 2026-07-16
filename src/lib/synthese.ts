@@ -45,6 +45,21 @@ function douteux<T>(c: Champ<T> | undefined): boolean {
   return !c || c.value == null || c.confiance === "basse";
 }
 
+/**
+ * Les montants d'un document sont-ils en euros ? Une devise absente vaut EUR
+ * (anciennes extractions, ou devise illisible : on ne bloque pas le dossier
+ * pour autant). Une devise étrangère (MUR, USD...) exclut le document des
+ * calculs de revenu, JAMAIS de conversion : même dossier, même score.
+ */
+function enEuros(doc: { devise?: Champ }): boolean {
+  const d = val(doc.devise);
+  return !d || d.trim().toUpperCase() === "EUR";
+}
+/** Devises étrangères présentes dans une liste de documents (codes uniques). */
+function devisesEtrangeres(docs: { devise?: Champ }[]): string[] {
+  return [...new Set(docs.filter((d) => !enEuros(d)).map((d) => (val(d.devise) ?? "").trim().toUpperCase()))];
+}
+
 function monthsBetween(fromISO: string, to: Date): number | null {
   const d = new Date(fromISO);
   if (isNaN(d.getTime())) return null;
@@ -180,13 +195,20 @@ type Emploi = NonNullable<SynthesePersonne["emploi"]>;
  * Ancienneté = âge de l'entreprise (KBIS, sinon date de création du bilan).
  */
 function emploiIndependant(b: DocsByType, now: Date, aVerifier: string[]): Emploi {
+  // Seuls les documents en euros nourrissent le revenu (pas de conversion).
+  const devisesEtr = devisesEtrangeres([...b.avis, ...b.bilans]);
+  if (devisesEtr.length) {
+    aVerifier.push(`documents de revenu en devise étrangère (${devisesEtr.join(", ")}) écartés du calcul`);
+  }
   let source: "avis_imposition" | "bilan" = "avis_imposition";
   let annuels = b.avis
+    .filter(enEuros)
     .map((a) => ({ annee: val(a.annee), montant: val(a.revenu_net_annuel) }))
     .filter((x): x is { annee: string | null; montant: number } => x.montant != null);
   if (!annuels.length) {
     source = "bilan";
     annuels = b.bilans
+      .filter(enEuros)
       .map((bi) => ({ annee: val(bi.annee), montant: val(bi.resultat_net) }))
       .filter((x): x is { annee: string | null; montant: number } => x.montant != null);
   }
@@ -253,9 +275,17 @@ export function buildSynthese(docs: DocumentMeta[], now = new Date()): SyntheseP
     if (estIndependant) {
       emploi = emploiIndependant(b, now, aVerifier);
     } else {
-      const nets = paies.map((f) => val(f.salaire_net_mensuel)).filter((v): v is number => v != null);
+      // Le salaire moyen ne compte que les bulletins en euros : un bulletin en
+      // devise étrangère (MUR, USD...) est écarté et signalé, jamais converti.
+      const paiesEur = paies.filter(enEuros);
+      const devisesEtr = devisesEtrangeres(paies);
+      if (devisesEtr.length) {
+        const n = paies.length - paiesEur.length;
+        aVerifier.push(`${n} bulletin${n > 1 ? "s" : ""} en devise étrangère (${devisesEtr.join(", ")}) écarté${n > 1 ? "s" : ""} du calcul du salaire`);
+      }
+      const nets = paiesEur.map((f) => val(f.salaire_net_mensuel)).filter((v): v is number => v != null);
       const salaireNet = nets.length ? Math.round((nets.reduce((a, x) => a + x, 0) / nets.length) * 100) / 100 : null;
-      if (paies.some((f) => douteux(f.salaire_net_mensuel))) aVerifier.push("salaire net (bulletin peu lisible)");
+      if (paiesEur.some((f) => douteux(f.salaire_net_mensuel))) aVerifier.push("salaire net (bulletin peu lisible)");
       if (!paies.length) aVerifier.push("aucune fiche de paie fournie");
       else if (paies.length < 3) aVerifier.push(`seulement ${paies.length} bulletin${paies.length > 1 ? "s" : ""} (3 recommandés)`);
 
@@ -327,8 +357,26 @@ export function buildCoherence(docs: DocumentMeta[], now = new Date()): Coherenc
   const parts = partitionByPerson(docs);
 
   for (const p of personnes) {
-    const { paies, contrat, identite } = parts[p];
-    if (!paies.length && !contrat && !identite) continue;
+    const b = parts[p];
+    const { paies, contrat, identite } = b;
+    if (!paies.length && !contrat && !identite && !aDocsIndependant(b)) continue;
+
+    // 0. Les montants du dossier sont en euros (une fiche de paie en roupie
+    // mauricienne n'est pas un salaire de 2.000 € : les documents en devise
+    // étrangère sont écartés du calcul et signalés ici).
+    const docsAvecMontants = [...paies, ...(contrat ? [contrat] : []), ...b.avis, ...b.bilans];
+    const etrangeres = devisesEtrangeres(docsAvecMontants);
+    if (docsAvecMontants.length) {
+      checks.push({
+        personne: p,
+        check: "Les montants du dossier sont en euros",
+        ok: etrangeres.length === 0,
+        detail:
+          etrangeres.length === 0
+            ? "Tous les montants lus (salaires, revenus) sont exprimés en euros."
+            : `Une partie des documents est en devise étrangère (${etrangeres.join(", ")}). Ces montants ne sont PAS comptés dans les revenus : à convertir ou justifier avec le candidat.`,
+      });
+    }
 
     // 1. Nom sur la fiche de paie == nom sur la pièce d'identité
     if (identite && paies.length) {
@@ -364,13 +412,15 @@ export function buildCoherence(docs: DocumentMeta[], now = new Date()): Coherenc
       }
     }
 
-    // 3. Salaire du contrat ≈ salaire des bulletins (±15 %)
-    if (contrat && paies.length) {
+    // 3. Salaire du contrat ≈ salaire des bulletins (±15 %). Uniquement entre
+    // montants en euros : comparer des devises différentes n'a pas de sens.
+    const paiesEur = paies.filter(enEuros);
+    if (contrat && enEuros(contrat) && paiesEur.length) {
       const sc = val(contrat.salaire_mensuel);
       const brut = val(contrat.salaire_est_brut);
       const ref = brut
-        ? paies.map((f) => val(f.salaire_brut_mensuel)).filter((v): v is number => v != null)
-        : paies.map((f) => val(f.salaire_net_mensuel)).filter((v): v is number => v != null);
+        ? paiesEur.map((f) => val(f.salaire_brut_mensuel)).filter((v): v is number => v != null)
+        : paiesEur.map((f) => val(f.salaire_net_mensuel)).filter((v): v is number => v != null);
       if (sc != null && ref.length) {
         const avg = ref.reduce((a, b) => a + b, 0) / ref.length;
         const ok = Math.abs(sc - avg) / Math.max(sc, avg) <= 0.15;

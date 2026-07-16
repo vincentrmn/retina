@@ -248,6 +248,15 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
       <div className="ds-section" style={{ marginTop: 0 }}>
         <span className="ds-h2">Documents du dossier</span>
         <span className="ds-rule" />
+        {nbDocs > 0 && (
+          <a
+            className="ds-btn ds-btn--secondary"
+            href={`/api/candidats/${id}/zip`}
+            title="Récupérer tous les documents du dossier en une archive zip"
+          >
+            Télécharger tous les documents
+          </a>
+        )}
         <button className="ds-btn ds-btn--primary" onClick={() => analyser(false)} disabled={analysing || nbDocs === 0}>
           {analysing ? <>Analyse en cours… <span className="ds-spinner" /></> : aAnalyser || !dejaExtraits ? "Analyser le dossier" : "Recalculer le score"}
         </button>

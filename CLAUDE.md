@@ -525,6 +525,27 @@ Le Google Sheets sort du circuit : les données Tally vivent dans le Postgres RE
 - **Auth reportée** (décision Vincent 16/07) : à faire quand BBI passera sur Workspace. D'ici là,
   l'app reste ouverte — ne pas diffuser l'URL RETINA au-delà de Shawna.
 
+### Retours Vincent (16/07/2026 soir) — lien court, devises étrangères, zip
+
+- **Lien court de candidature** : la carte « Candidature en ligne » affiche `https://retina-…/c/<id>`
+  (route `src/app/c/[id]/route.ts`, redirection 302 vers `tally.so/r/<form>?bien=&adresse=`) au lieu
+  de l'URL Tally chargée de l'adresse encodée. Bonus : si le formulaire change un jour, les liens
+  déjà envoyés continuent de marcher. L'hôte vient des en-têtes `x-forwarded-host`/`host`.
+- **Devises étrangères (bug réel remonté par Vincent : fiche de paie en MUR comptée en euros)** :
+  champ `devise` (code ISO, `{value, confiance}`) ajouté aux schémas bulletins/contrat/avis/bilans,
+  prompts explicites « montants TELS QUELS dans la devise du document, ne convertis JAMAIS en
+  euros ». La synthèse n'additionne que les montants EUR (devise absente = EUR, compat anciennes
+  extractions), signale les documents écartés dans `aVerifier` ET dans un contrôle de cohérence
+  dédié « Les montants du dossier sont en euros » (rouge, validable à la main). Jamais de conversion
+  (déterminisme). ⚠️ Les documents étrangers déjà extraits AVANT ce champ n'ont pas de devise →
+  comptés en EUR : utiliser « tout ré-extraire » sur les dossiers suspects.
+- **Zip des documents** : bouton « Télécharger tous les documents » sur la fiche candidat →
+  `GET /api/candidats/[id]/zip` (jszip, noms dédoublonnés, `dossier-<nom>.zip`). Permet à Shawna
+  d'archiver un dossier ailleurs d'un clic.
+- **Doublon Mondercange (question Vincent)** : déjà traité à la synchro initiale — le bien manuel de
+  Shawna (adresse postale + 225 € de charges conservées, 5 candidats) a été rattaché à APP025 via
+  `{apimoId}` et le doublon créé par l'import supprimé ; la synchro ne recrée rien (0 créés).
+
 **Reste à faire / SPRINT 2 (ouvert par Vincent le 03/07/2026)** :
 1. **Employeur dominant** (constat dossier LANG-STREE) : afficher l'employeur le plus fréquent des
    bulletins (et signaler « plusieurs employeurs ») au lieu du premier trouvé. Cosmétique, sûr.

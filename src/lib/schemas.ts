@@ -43,6 +43,17 @@ function objet(properties: Record<string, Json>): Json {
   };
 }
 
+/**
+ * Devise des montants d'un document. Les dossiers contiennent parfois des
+ * fiches de paie ou avis étrangers (MUR, USD, CHF...) : les montants sont
+ * extraits TELS QUELS dans leur devise, jamais convertis, et la synthèse
+ * écarte du calcul tout ce qui n'est pas en euros (en le signalant).
+ */
+const DEVISE = champ(
+  "string",
+  "Code ISO 4217 de la devise des montants du document (EUR, MUR, USD, CHF, GBP...). EUR si les montants sont en euros. Ne convertis JAMAIS un montant dans une autre devise."
+);
+
 const BULLETIN = {
   type: "object",
   description: "Un bulletin de salaire (un mois)",
@@ -50,12 +61,13 @@ const BULLETIN = {
     nom_complet: champ("string", "Nom complet du salarié tel qu'imprimé sur le bulletin"),
     employeur: champ("string", "Nom de l'employeur / raison sociale"),
     periode: champ("string", "Période du bulletin au format YYYY-MM"),
-    salaire_net_mensuel: champ("number", "Salaire NET mensuel en euros (net à payer avant impôt si distinction, sinon net à payer)"),
-    salaire_brut_mensuel: champ("number", "Salaire BRUT mensuel en euros"),
+    salaire_net_mensuel: champ("number", "Salaire NET mensuel, dans la devise du bulletin (net à payer avant impôt si distinction, sinon net à payer)"),
+    salaire_brut_mensuel: champ("number", "Salaire BRUT mensuel, dans la devise du bulletin"),
+    devise: DEVISE,
     intitule_poste: champ("string", "Intitulé du poste / fonction si présent"),
     date_entree: champ("string", "Date d'entrée / d'ancienneté dans l'entreprise au format YYYY-MM-DD (souvent en en-tête du bulletin)"),
   },
-  required: ["nom_complet", "employeur", "periode", "salaire_net_mensuel", "salaire_brut_mensuel", "intitule_poste", "date_entree"],
+  required: ["nom_complet", "employeur", "periode", "salaire_net_mensuel", "salaire_brut_mensuel", "devise", "intitule_poste", "date_entree"],
   additionalProperties: false,
 };
 
@@ -75,8 +87,9 @@ const CONTRAT_PROPS: Record<string, Json> = {
   date_fin: champ("string", "Date de fin (CDD/intérim), YYYY-MM-DD. null si CDI"),
   periode_essai: champ("boolean", "Le contrat prévoit-il une période d'essai ?"),
   fin_periode_essai: champ("string", "Date de fin de la période d'essai, YYYY-MM-DD, si calculable depuis le contrat"),
-  salaire_mensuel: champ("number", "Salaire mensuel indiqué au contrat, en euros"),
+  salaire_mensuel: champ("number", "Salaire mensuel indiqué au contrat, dans la devise du contrat"),
   salaire_est_brut: champ("boolean", "true si le salaire du contrat est exprimé en BRUT"),
+  devise: DEVISE,
   intitule_poste: champ("string", "Intitulé du poste"),
 };
 
@@ -118,15 +131,17 @@ export const SCHEMAS: Record<DocType, Json> = {
 const AVIS_PROPS: Record<string, Json> = {
   nom_complet: champ("string", "Nom complet du contribuable"),
   annee: champ("string", "Année des revenus concernés, format AAAA"),
-  revenu_net_annuel: champ("number", "Revenu net imposable OU revenu fiscal de référence, en euros par an"),
+  revenu_net_annuel: champ("number", "Revenu net imposable OU revenu fiscal de référence, par an, dans la devise du document"),
+  devise: DEVISE,
 };
 const BILAN_PROPS: Record<string, Json> = {
   nom_complet: champ("string", "Nom de l'exploitant ou du gérant si présent"),
   denomination: champ("string", "Raison sociale / nom de l'entreprise"),
   forme_juridique: champ("string", "Forme juridique (SARL, SAS, entreprise individuelle, profession libérale, etc.)"),
   annee: champ("string", "Exercice concerné, format AAAA"),
-  chiffre_affaires: champ("number", "Chiffre d'affaires de l'exercice, en euros"),
-  resultat_net: champ("number", "Résultat net de l'exercice (bénéfice positif, perte négative), en euros"),
+  chiffre_affaires: champ("number", "Chiffre d'affaires de l'exercice, dans la devise du document"),
+  resultat_net: champ("number", "Résultat net de l'exercice (bénéfice positif, perte négative), dans la devise du document"),
+  devise: DEVISE,
   date_creation: champ("string", "Date de création de l'entreprise, YYYY-MM-DD, si présente"),
 };
 const KBIS_PROPS: Record<string, Json> = {
@@ -189,7 +204,8 @@ export const PROMPTS_MULTI: Record<DossierType, string> = {
     "différentes et sur plusieurs mois, en scans de qualité variable. Produis un élément de `bulletins` PAR bulletin " +
     "présent, en conservant le nom exact du salarié de chaque bulletin (c'est lui qui permet de rattacher le bulletin " +
     "à la bonne personne). N'invente JAMAIS une valeur : champ absent ou illisible => value=null ou confiance basse. " +
-    "Montants en euros (1.234,56 ou 1 234,56 => 1234.56)." + SANS_CADRATIN,
+    "Donne les montants TELS QUELS dans la devise du bulletin et renseigne `devise` (code ISO : EUR, MUR, USD...) : ne " +
+    "convertis JAMAIS en euros. Normalise seulement l'écriture (1.234,56 ou 1 234,56 => 1234.56)." + SANS_CADRATIN,
   contrat:
     "Ce fichier peut contenir un ou plusieurs contrats de travail (parfois deux personnes), en scans de qualité " +
     "variable. Produis un élément de `contrats` PAR contrat présent, avec le nom exact du salarié de chaque contrat. " +
@@ -202,13 +218,15 @@ export const PROMPTS_MULTI: Record<DossierType, string> = {
   avis_imposition:
     "Ce fichier contient un ou plusieurs avis / bulletins d'imposition (documents des impôts), pour une ou deux " +
     "personnes, sur une ou plusieurs années. Produis un élément de `avis_imposition` PAR avis, avec le nom exact du " +
-    "contribuable, l'année des revenus et le revenu net imposable (ou, à défaut, le revenu fiscal de référence) en " +
-    "euros par an. N'invente JAMAIS une valeur : champ absent ou illisible => value=null ou confiance basse." + SANS_CADRATIN,
+    "contribuable, l'année des revenus et le revenu net imposable (ou, à défaut, le revenu fiscal de référence) par an, " +
+    "dans la devise du document avec `devise` renseignée (jamais de conversion). N'invente JAMAIS une valeur : champ " +
+    "absent ou illisible => value=null ou confiance basse." + SANS_CADRATIN,
   bilan:
     "Ce fichier contient un ou plusieurs bilans comptables / comptes de résultat d'entreprise, possiblement sur " +
     "plusieurs exercices. Produis un élément de `bilans` PAR exercice, avec la raison sociale, la forme juridique, " +
     "l'année de l'exercice, le chiffre d'affaires, le résultat net (bénéfice positif, perte négative) et le nom de " +
-    "l'exploitant/gérant si présent. N'invente JAMAIS une valeur. Montants en euros." + SANS_CADRATIN,
+    "l'exploitant/gérant si présent. N'invente JAMAIS une valeur. Montants dans la devise du document, `devise` " +
+    "renseignée, jamais de conversion." + SANS_CADRATIN,
   kbis:
     "Ce fichier contient un ou plusieurs extraits KBIS / avis d'immatriculation d'entreprise. Produis un élément de " +
     "`kbis` PAR extrait, avec la dénomination, la forme juridique, la date d'immatriculation (création), le nom du " +
@@ -241,7 +259,8 @@ export const PROMPTS: Record<DocType, string> = {
     "Ce document contient une ou plusieurs fiches de paie (bulletins de salaire), possiblement des scans de " +
     "qualité variable. Produis un élément de `bulletins` PAR bulletin/mois présent dans le document. Règles " +
     "strictes : n'invente JAMAIS une valeur — si un champ est absent, illisible ou douteux, mets value=null ou " +
-    "baisse la confiance. Les montants sont en euros ; convertis les formats locaux (1.234,56 ou 1 234,56 → " +
+    "baisse la confiance. Donne les montants TELS QUELS dans la devise du bulletin et renseigne `devise` (code ISO : " +
+    "EUR, MUR, USD...) : ne convertis JAMAIS en euros. Normalise seulement l'écriture (1.234,56 ou 1 234,56 → " +
     "1234.56). Si un bulletin couvre une période non mensuelle, ramène les salaires au mensuel et signale-le en " +
     "remarques." + SANS_CADRATIN,
   contrat:
