@@ -455,6 +455,64 @@ n'est PAS un bug.**
   jusqu'à `SUCCESS`** et vérifier le `commitHash` déployé + un `GET /` en 200. Le token n'est pas
   stocké (le redemander à Vincent).
 
+### Intégration Apimo + Tally (16/07/2026) — candidatures en ligne automatisées
+
+Pipeline complet livré et déployé : **Apimo (biens) → RETINA → lien Tally par bien → le candidat
+remplit et uploade → webhook → candidat créé + documents téléchargés + analyse automatique**.
+Le Google Sheets sort du circuit : les données Tally vivent dans le Postgres RETINA (et pourront
+être synchronisées vers Pipedrive demain — email/téléphone déjà stockés).
+
+- **Import Apimo** (`src/lib/apimo.ts` + `POST /api/apimo/sync` + bouton « Synchroniser Apimo » sur
+  l'accueil) : biens à la location uniquement (`category=2`, `status=1`). Mapping : loyer =
+  `price.value` (period 4 = mensuel), **charges = `price.fees`**, libellé = titre FR de l'annonce +
+  ville (l'API n'expose PAS l'adresse postale, `address` est null). Dédoublonnage par `apimo_id`
+  (upsert : les critères réglés par Shawna sont conservés, seuls adresse/loyer/charges se
+  rafraîchissent, avec recalcul des scores si le coût change — zéro coût API). ⚠️ `price.fees` est
+  souvent vide côté Apimo alors que le bien a des charges (constaté sur APP025 : 0 vs 225 € encodés
+  par Shawna) → la synchro **ne met à jour les charges que si Apimo en fournit** (jamais d'écrasement
+  par un zéro). Un bien encodé à la main peut être **rattaché à sa fiche Apimo** via
+  `PATCH /api/biens/[id]` `{apimoId}` (fait pour le bien LANG-STREE ↔ APP025, doublon supprimé).
+  Un bien retiré d'Apimo n'est jamais supprimé. Identifiants : clé « Brouwers AI » (`APIMO_PROVIDER=4764`,
+  `APIMO_AGENCY=16579`, `APIMO_TOKEN` — doc Sprint 1 BBI Launchpad du Drive). ⚠️ Apimo n'expose que
+  les biens où le partenaire « Brouwers AI » est activé MANUELLEMENT sur la fiche (4 biens location
+  exposés au 16/07). Quota 1000 appels.
+- **Formulaire Tally unique** : `https://tally.so/r/ob1NPX` (compte vincent@korr.lu, créé via MCP
+  Tally). UN formulaire pour tous les biens, rattaché par **champ caché `bien`** (id RETINA) porté
+  par l'URL — PAS un formulaire par bien (zéro dérive, un seul webhook). Champs : nom, email,
+  téléphone, seul/à deux (2ᵉ nom affiché par logique conditionnelle), **upload multiple** (PDF/JPEG/
+  PNG/WebP/HEIC, 10 Mo max par fichier = plafond du plan Tally gratuit, 20 fichiers max), CAPTCHA
+  anti-spam. La page bien affiche le lien copiable (carte « Candidature en ligne », construite
+  depuis `TALLY_FORM_ID` côté serveur).
+- **Webhook** (`POST /api/webhooks/tally`) : signature **HMAC-SHA256 base64 vérifiée**
+  (`TALLY_SIGNING_SECRET`, en-tête `tally-signature`) — sans secret configuré, tout est refusé.
+  **Idempotence** par `tally_submission_id` (index unique : Tally rejoue les webhooks en échec).
+  Crée le candidat (nom = les 2 noms joints par « et », email, téléphone, `source='tally'`),
+  télécharge les fichiers depuis le stockage Tally (URLs à token du payload), les insère en
+  `documents` (`type='auto'`, `personne='?'` → pipeline batch existant), puis lance
+  **`analyseCandidat()` en arrière-plan** (réponse à Tally < 10 s, timeout webhook Tally). Un bien
+  inconnu répond 200 (inutile que Tally rejoue). L'analyse est factorisée dans **`src/lib/analyse.ts`**
+  (partagée avec le bouton Analyser).
+- **Schéma** : `biens.apimo_id` (unique partiel), `candidats.email/telephone/source/
+  tally_submission_id` (unique partiel). HEIC accepté à l'upload Tally mais pas par l'API Anthropic :
+  le webhook l'ignore proprement (listé dans `ignores`), à convertir si ça devient fréquent.
+- **Config webhook côté Tally = MANUEL** (ni le MCP ni l'API publique sans clé ne le permettent) :
+  Tally → formulaire → Integrations → Webhooks → endpoint
+  `https://retina-production-6d72.up.railway.app/api/webhooks/tally` + signing secret = valeur de
+  `TALLY_SIGNING_SECRET` sur Railway. Fait une fois, vaut pour tous les biens.
+- **Variables Railway** posées sur `retina` : `TALLY_SIGNING_SECRET`, `TALLY_FORM_ID=ob1NPX`,
+  `APIMO_PROVIDER/TOKEN/AGENCY`. ⚠️ Piège : le **MCP Railway** (`railway-agent`) « stage » les
+  variables sans les appliquer — exiger ensuite un **commit des staged changes** (sinon le déploiement
+  suivant part sans). Vérifier avec un appel API qui lit la variable.
+- **RGPD** : la rétention auto des soumissions Tally (30 j) exige **Tally Business** — pas actif.
+  Les documents vivent donc EN DOUBLE (Tally + Postgres RETINA) tant qu'on n'efface pas les
+  soumissions Tally à la main (ou upgrade). RETINA reste la base de référence.
+- **Sécurité coût API** : CAPTCHA sur le formulaire + idempotence par soumission. Pas de plafond
+  d'analyses par bien pour l'instant.
+- ⚠️ Piège shell : `pkill -f "next start"` dans une commande Bash se tue lui-même (le motif matche
+  la ligne de commande du shell). Utiliser `pkill -f '[n]ext-server'`.
+- **Auth reportée** (décision Vincent 16/07) : à faire quand BBI passera sur Workspace. D'ici là,
+  l'app reste ouverte — ne pas diffuser l'URL RETINA au-delà de Shawna.
+
 **Reste à faire / SPRINT 2 (ouvert par Vincent le 03/07/2026)** :
 1. **Employeur dominant** (constat dossier LANG-STREE) : afficher l'employeur le plus fréquent des
    bulletins (et signaler « plusieurs employeurs ») au lieu du premier trouvé. Cosmétique, sûr.
@@ -465,6 +523,10 @@ n'est PAS un bug.**
    Drive (avis d'imposition / bilan / KBIS) ; valider le barème indépendant (décote 20 %, ancienneté
    2 ans, revenu = moyenne 2 ans) et le barème général avec Shawna.
 4. Éventuel plafonnement de la résolution des scans (levier coût, si le volume grimpe).
+5. **(16/07)** Synchronisation des candidats vers **Pipedrive** (email/téléphone déjà en base) ;
+   **envoi automatique du lien Tally** aux candidats entrants (via Make, comme le parcours achat) ;
+   **authentification RETINA** quand BBI passe sur Google Workspace ; **cron de synchro Apimo**
+   (aujourd'hui bouton manuel) ; conversion HEIC si des candidats en envoient beaucoup.
 
 ## Conventions pour Claude Code
 

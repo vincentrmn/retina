@@ -45,14 +45,19 @@ export async function POST() {
       }
 
       const cur = existant.rows[0];
+      // Les charges Apimo (price.fees) sont souvent absentes alors que le bien
+      // en a (constaté sur APP025 : 0 côté Apimo, 225 € encodés par Shawna).
+      // On ne les met à jour que si Apimo en fournit — jamais d'écrasement
+      // d'une valeur manuelle par un zéro.
+      const charges = b.charges > 0 ? b.charges : Number(cur.charges);
       const loyerChange = Number(cur.loyer) !== b.loyer;
-      const chargesChange = Number(cur.charges) !== b.charges;
+      const chargesChange = Number(cur.charges) !== charges;
       if (cur.adresse === b.adresse && !loyerChange && !chargesChange) continue;
 
       await pool.query(`UPDATE biens SET adresse=$1, loyer=$2, charges=$3, updated_at=now() WHERE id=$4`, [
         b.adresse,
         b.loyer,
-        b.charges,
+        charges,
         cur.id,
       ]);
       maj++;
@@ -67,7 +72,7 @@ export async function POST() {
         );
         for (const c of cands.rows) {
           const score = scoreCandidat(
-            { loyer: b.loyer, charges: b.charges, criteres },
+            { loyer: b.loyer, charges, criteres },
             (c.synthese ?? []) as SynthesePersonne[],
             (c.coherence ?? []) as CoherenceCheck[]
           );

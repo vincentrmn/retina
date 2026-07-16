@@ -53,9 +53,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const loyer = body.loyer != null ? Number(body.loyer) : Number(cur.loyer);
     const charges = body.charges != null ? Number(body.charges) : Number(cur.charges);
     const criteres = normalizeCriteres({ ...cur.criteres, ...(body.criteres ?? {}) });
+    // Rattachement (ou détachement) manuel d'un bien à sa fiche Apimo : permet
+    // de fusionner un bien encodé à la main avec son pendant importé, pour que
+    // les synchros suivantes le tiennent à jour.
+    const apimoId = body.apimoId !== undefined ? (body.apimoId == null ? null : Number(body.apimoId)) : cur.apimo_id;
     await pool.query(
-      `UPDATE biens SET adresse=$1, loyer=$2, charges=$3, criteres=$4, updated_at=now() WHERE id=$5`,
-      [adresse, loyer, charges, JSON.stringify(criteres), id]
+      `UPDATE biens SET adresse=$1, loyer=$2, charges=$3, criteres=$4, apimo_id=$5, updated_at=now() WHERE id=$6`,
+      [adresse, loyer, charges, JSON.stringify(criteres), apimoId, id]
     );
 
     // Loyer, charges ou critères changés : on recalcule le score de chaque
