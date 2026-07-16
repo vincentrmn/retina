@@ -88,7 +88,12 @@ function TraiteButton({ traite, onToggle }: { traite: boolean; onToggle: () => v
       }}
       style={{
         cursor: "pointer",
-        border: traite ? "1px solid #07875f" : "1px dashed var(--ds-line-2, var(--ds-line))",
+        // Même gabarit dans les deux états (largeur fixe, texte centré, même
+        // bordure) : seuls le texte, la couleur et le check changent.
+        width: 108,
+        display: "inline-flex",
+        justifyContent: "center",
+        border: `1px solid ${traite ? "#07875f" : "var(--ds-line-2, var(--ds-line))"}`,
         background: traite ? "#e3f7f0" : "transparent",
         color: traite ? "#07875f" : "var(--ds-ink-soft)",
         fontWeight: 600,
