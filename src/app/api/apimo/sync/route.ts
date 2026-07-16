@@ -45,17 +45,19 @@ export async function POST() {
       }
 
       const cur = existant.rows[0];
-      // Les charges Apimo (price.fees) sont souvent absentes alors que le bien
-      // en a (constaté sur APP025 : 0 côté Apimo, 225 € encodés par Shawna).
-      // On ne les met à jour que si Apimo en fournit — jamais d'écrasement
-      // d'une valeur manuelle par un zéro.
+      // Sur un bien existant, on ne rafraîchit que le loyer et les charges :
+      // - l'adresse peut avoir été précisée à la main (l'API Apimo n'expose que
+      //   le titre de l'annonce, pas l'adresse postale) — on n'y touche plus ;
+      // - les charges Apimo (price.fees) sont souvent absentes alors que le
+      //   bien en a (constaté sur APP025 : 0 côté Apimo, 225 € encodés par
+      //   Shawna) → mises à jour seulement si Apimo en fournit, jamais
+      //   d'écrasement d'une valeur manuelle par un zéro.
       const charges = b.charges > 0 ? b.charges : Number(cur.charges);
       const loyerChange = Number(cur.loyer) !== b.loyer;
       const chargesChange = Number(cur.charges) !== charges;
-      if (cur.adresse === b.adresse && !loyerChange && !chargesChange) continue;
+      if (!loyerChange && !chargesChange) continue;
 
-      await pool.query(`UPDATE biens SET adresse=$1, loyer=$2, charges=$3, updated_at=now() WHERE id=$4`, [
-        b.adresse,
+      await pool.query(`UPDATE biens SET loyer=$1, charges=$2, updated_at=now() WHERE id=$3`, [
         b.loyer,
         charges,
         cur.id,

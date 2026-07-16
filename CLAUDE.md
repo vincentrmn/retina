@@ -466,8 +466,9 @@ Le Google Sheets sort du circuit : les données Tally vivent dans le Postgres RE
   l'accueil) : biens à la location uniquement (`category=2`, `status=1`). Mapping : loyer =
   `price.value` (period 4 = mensuel), **charges = `price.fees`**, libellé = titre FR de l'annonce +
   ville (l'API n'expose PAS l'adresse postale, `address` est null). Dédoublonnage par `apimo_id`
-  (upsert : les critères réglés par Shawna sont conservés, seuls adresse/loyer/charges se
-  rafraîchissent, avec recalcul des scores si le coût change — zéro coût API). ⚠️ `price.fees` est
+  (upsert : critères ET adresse d'un bien existant conservés — l'adresse a pu être précisée à la
+  main —, seuls loyer/charges se rafraîchissent, avec recalcul des scores si le coût change — zéro
+  coût API). ⚠️ `price.fees` est
   souvent vide côté Apimo alors que le bien a des charges (constaté sur APP025 : 0 vs 225 € encodés
   par Shawna) → la synchro **ne met à jour les charges que si Apimo en fournit** (jamais d'écrasement
   par un zéro). Un bien encodé à la main peut être **rattaché à sa fiche Apimo** via
