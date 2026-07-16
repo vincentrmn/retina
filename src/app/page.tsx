@@ -72,21 +72,21 @@ export default function Dashboard() {
         <div className="ds-card__head">Bienvenue sur RETINA</div>
         <div className="ds-card__body">
           <p style={{ margin: 0, lineHeight: 1.55 }}>
-            RETINA analyse les dossiers des candidats à la location. Pour chaque bien, vous déposez les documents
-            d&apos;un candidat (fiches de paie, contrat de travail, pièce d&apos;identité), et l&apos;outil en extrait
-            automatiquement les informations financières, vérifie leur cohérence, puis calcule un score
-            d&apos;éligibilité expliqué critère par critère.
+            RETINA analyse les dossiers des candidats à la location : extraction automatique des documents
+            (fiches de paie, contrats, pièces d&apos;identité), contrôles de cohérence, puis score
+            d&apos;éligibilité expliqué critère par critère. Du bien jusqu&apos;au score, tout peut se faire
+            sans saisie manuelle.
           </p>
           <div className="intro-steps">
             <div className="intro-step">
               <span className="intro-step__n">1</span>
-              <div className="intro-step__t">Encodez le bien</div>
-              <div className="intro-step__d">Adresse, loyer, charges et critères d&apos;éligibilité (ratio de revenus exigé, exigences de contrat).</div>
+              <div className="intro-step__t">Le bien entre dans RETINA</div>
+              <div className="intro-step__d">« Synchroniser Apimo » importe les biens à la location, ou encodez-en un à la main. Ajustez ensuite ses critères d&apos;éligibilité.</div>
             </div>
             <div className="intro-step">
               <span className="intro-step__n">2</span>
-              <div className="intro-step__t">Déposez les documents</div>
-              <div className="intro-step__d">Tous les documents d&apos;un candidat en une fois. RETINA reconnaît seul le type de chaque document et la personne concernée.</div>
+              <div className="intro-step__t">Les candidatures arrivent toutes seules</div>
+              <div className="intro-step__d">Envoyez aux intéressés le lien de candidature du bien : le candidat remplit le questionnaire, dépose ses documents, et son dossier est analysé automatiquement. Le dépôt à la main reste possible.</div>
             </div>
             <div className="intro-step">
               <span className="intro-step__n">3</span>

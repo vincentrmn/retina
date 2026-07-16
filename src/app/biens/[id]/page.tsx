@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { eur, STATUT_LABELS } from "@/lib/format";
+import { eur } from "@/lib/format";
 import { normalizeCriteres, type Score } from "@/lib/types";
 
 type CandidatRow = {
@@ -45,6 +45,25 @@ function ScorePill({ score }: { score: Score | null }) {
       style={{ background: s.bg, color: s.fg, fontWeight: 700, border: "none" }}
     >
       {s.label}{score?.eliminatoire ? " · éliminatoire" : ""}
+    </span>
+  );
+}
+
+/** Statut du dossier en une pastille discrète accolée au nom. */
+function StatutPill({ statut, score }: { statut: string; score: Score | null }) {
+  const s =
+    score != null
+      ? { bg: "#e3f7f0", fg: "#07875f", label: "Analysé" }
+      : statut === "erreur_document"
+      ? { bg: "#fbeaea", fg: "#b3261e", label: "Erreur document" }
+      : { bg: "var(--ds-bg-subtle)", fg: "var(--ds-ink-soft)", label: "En attente" };
+  return (
+    <span
+      className="ds-pill"
+      style={{ background: s.bg, color: s.fg, border: "none", fontWeight: 600, marginLeft: 10, verticalAlign: "2px" }}
+    >
+      <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: s.fg, marginRight: 6 }} />
+      {s.label}
     </span>
   );
 }
@@ -224,19 +243,13 @@ export default function BienPage({ params }: { params: { id: string } }) {
           <div className="ds-row__main">
             <div className="ds-row__title">
               {c.score ? `${i + 1}. ` : ""}{c.nom}
+              <StatutPill statut={c.statut} score={c.score} />
             </div>
-            <div className="ds-row__sub">
-              {STATUT_LABELS[c.statut] ?? c.statut} · {c.nb_documents} document{c.nb_documents > 1 ? "s" : ""}
-              {c.source === "tally" ? " · candidature en ligne" : ""}
-              {c.email ? ` · ${c.email}` : ""}
-              {c.score?.ratio != null ? ` · revenus ${c.score.ratio} fois le coût du logement` : ""}
-              {c.score?.eliminatoire ? (
-                <span style={{ color: "#b3261e", fontWeight: 600 }}>
-                  {" · éliminé sur : "}
-                  {c.score.criteres.filter((cr) => cr.eliminatoire).map((cr) => cr.label.toLowerCase()).join(", ")}
-                </span>
-              ) : ""}
-            </div>
+            {c.score?.eliminatoire && (
+              <div className="ds-row__sub" style={{ color: "#b3261e", fontWeight: 600 }}>
+                Éliminé sur : {c.score.criteres.filter((cr) => cr.eliminatoire).map((cr) => cr.label.toLowerCase()).join(", ")}
+              </div>
+            )}
           </div>
           <div className="ds-row__actions">
             <ScorePill score={c.score} />
