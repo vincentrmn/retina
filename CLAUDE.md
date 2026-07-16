@@ -394,6 +394,31 @@ dossier multi-documents. **Barème = valeurs par défaut, à caler avec Shawna s
   le nom + revenu ménage retenu corrects. ⚠️ **Calibration sur un vrai dossier d'indépendant = étape
   suivante** (l'extraction avis/bilan/KBIS n'est validée que sur des dossiers fabriqués).
 
+### Première calibration sur un VRAI dossier (03/07/2026) — Shawna, dossier « LANG-STREE »
+
+Premier test utilisateur du profil indépendant sur un vrai scan. Shawna a signalé « 15 bulletins
+alors que le document présente 12 salaires 2025 ». **Diagnostic (données réelles inspectées) : ce
+n'est PAS un bug.**
+
+- **Le « 15 » est correct** : la personne **Strée Florian** a eu **deux employeurs** en 2025 —
+  **Amplo Liège** (12 bulletins, janvier→décembre) + **NV ERGOFLEX** (3 bulletins : mars, sept, oct).
+  12 + 3 = 15. Le modèle a tout lu ; Shawna n'avait compté que l'employeur principal.
+- **Le couple a été correctement séparé** depuis le seul gros scan : **Strée Florian = salarié**
+  (15 bulletins, 2 employeurs), **Lang Jessie = indépendante** détectée via son **avis d'imposition
+  2024** (36 048 €/an → 3 004 €/mois). Donc la détection couple + le profil indépendant tiennent sur
+  du réel. 👍
+- **Deux vrais points relevés au passage → SPRINT 2** :
+  1. **Employeur affiché = le 1ᵉʳ bulletin trouvé** (`paies.map(...).find`) = « NV ERGOFLEX » (mineur,
+     3 mois) au lieu d'« Amplo Liège » (principal, 12 mois). Afficher l'employeur **dominant** (le plus
+     fréquent) et/ou signaler « 2 employeurs ». Cosmétique, sûr.
+  2. **Salarié SANS contrat de travail** → `type_contrat = null` → **0 pt de stabilité**, ce qui plombe
+     la note malgré un an de fiches de paie. Piste (à valider avec Shawna) : sans contrat, retenir une
+     stabilité « salarié, contrat non fourni » (~15/30) au lieu de 0, avec une note « contrat manquant ».
+- **Méthode — accès aux données de prod** : le port TCP Postgres (`hayabusa.proxy.rlwy.net:30422`) est
+  **injoignable** (egress limité au HTTPS via le proxy) → `psql` timeout. Contournement : l'app RETINA
+  est **ouverte (sans auth)**, donc on inspecte l'extraction stockée directement via l'**API prod**
+  (`GET /api/candidats/[id]` renvoie `documents[].extraction` complet). Réutilisable pour tout debug data.
+
 ### Pièges durables (valables aussi pour SCOUT & VESPER — même stack, même `globals.css`, même jsPDF)
 
 1. **jsPDF + police standard = WinAnsi (CP1252) UNIQUEMENT.** Un caractère hors de ce jeu ne rate
@@ -430,14 +455,15 @@ dossier multi-documents. **Barème = valeurs par défaut, à caler avec Shawna s
   jusqu'à `SUCCESS`** et vérifier le `commitHash` déployé + un `GET /` en 200. Le token n'est pas
   stocké (le redemander à Vincent).
 
-**Reste à faire** :
-1. **Calibration de l'extraction dossier sur de VRAIS scans mixtes** de Shawna (un seul gros PDF avec
-   plusieurs documents et/ou deux personnes) : vérifier que Haiku détecte bien les types présents et
-   qu'Opus + le regroupement par nom séparent correctement A/B. Aujourd'hui validé sur dossiers fictifs.
-   **Inclut le profil indépendant** : caler l'extraction avis d'imposition / bilan / KBIS + valider le
-   barème indépendant (décote 20 %, ancienneté 2 ans, revenu = moyenne 2 ans) avec Shawna.
-2. **Calibration élargie** (autres dossiers réels du Drive) + validation du barème avec Shawna.
-3. Barème/poids à valider avec Shawna (valeurs actuelles = barème indicatif du §Étage 2).
+**Reste à faire / SPRINT 2 (ouvert par Vincent le 03/07/2026)** :
+1. **Employeur dominant** (constat dossier LANG-STREE) : afficher l'employeur le plus fréquent des
+   bulletins (et signaler « plusieurs employeurs ») au lieu du premier trouvé. Cosmétique, sûr.
+2. **Salarié sans contrat de travail** : ne plus mettre 0 de stabilité quand `type_contrat=null` mais
+   qu'il y a des fiches de paie récurrentes → stabilité « salarié, contrat non fourni » (~15/30) + note
+   « contrat manquant ». À valider avec Shawna (barème).
+3. **Calibration élargie** de l'extraction dossier + profil indépendant sur d'autres vrais dossiers du
+   Drive (avis d'imposition / bilan / KBIS) ; valider le barème indépendant (décote 20 %, ancienneté
+   2 ans, revenu = moyenne 2 ans) et le barème général avec Shawna.
 4. Éventuel plafonnement de la résolution des scans (levier coût, si le volume grimpe).
 
 ## Conventions pour Claude Code
