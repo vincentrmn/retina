@@ -49,6 +49,18 @@ h3 { font-weight: 600; }
   border-bottom: 1px solid var(--line);
 }
 .topbar > .brand-home, .topbar > .brand { justify-self: start; }
+/* Variante « marque à gauche, boutons à droite » : le titre du bien/candidat
+   n'est plus dans la barre mais sur une ligne dédiée en dessous (.page-title-lg). */
+.topbar--split { grid-template-columns: 1fr auto; }
+/* Titre de page sur sa propre ligne, sous la barre du header. */
+.page-title-lg {
+  margin: 0 0 22px; color: var(--ink); font-weight: 700;
+  font-size: 1.6rem; line-height: 1.25; letter-spacing: -0.01em;
+}
+@media (max-width: 640px) { .page-title-lg { font-size: 1.3rem; } }
+/* Tag Apimo : le logo officiel à la hauteur d'une pastille. */
+.apimo-tag { display: inline-flex; align-items: center; height: 22px; }
+.apimo-tag img { height: 15px; width: auto; display: block; }
 .page-title {
   /* justify-self:stretch (et non center) : le titre remplit sa colonne, donc le
      rognage sur 2 lignes fonctionne au lieu de déborder sur la marque. */

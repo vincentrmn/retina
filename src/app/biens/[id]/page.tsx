@@ -38,6 +38,17 @@ function scoreStyle(score: Score | null): { bg: string; fg: string; label: strin
   return { bg: "#fff4e0", fg: "#9a6700", label: `${t}/100` };
 }
 
+/** Icône PDF (document avec coin plié), pour le bouton d'export. */
+function PdfIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <path d="M6 2h8l4 4v16H6z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M14 2v4h4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M8.5 16.5v-4h1.2a1.4 1.4 0 010 2.8H8.5M13 16.5v-4h1.6M13 14.4h1.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function ScorePill({ score }: { score: Score | null }) {
   const s = scoreStyle(score);
   return (
@@ -235,17 +246,17 @@ export default function BienPage({ params }: { params: { id: string } }) {
 
   return (
     <div className="wrap ds-scope ds-scope--lg">
-      <div className="topbar">
+      <div className="topbar topbar--split">
         <a className="brand-home" href="/" title="Accueil">RETINA</a>
-        <h1 className="page-title">{bien.adresse}</h1>
         <div className="topbar-nav">
           <button className="ds-btn ds-btn--secondary" onClick={exporterPdf} disabled={exporting || nbAnalyses === 0}>
-            {exporting ? "Export…" : "Exporter en PDF"}
+            <PdfIcon /> {exporting ? "Export…" : "Exporter"}
           </button>
           <a className="ds-btn ds-btn--ghost" href={`/biens/${id}/edit`}>Modifier</a>
           <a className="ds-btn ds-btn--ghost" href="/">← Accueil</a>
         </div>
       </div>
+      <h1 className="page-title-lg">{bien.adresse}</h1>
 
       <div className="ds-stats">
         <div className="ds-stat"><span className="ds-stat__k">Loyer</span><span className="ds-stat__v ds-num">{eur(bien.loyer)}</span></div>

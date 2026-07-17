@@ -14,6 +14,21 @@ type Bien = {
   nb_analyses: number;
 };
 
+/** Icône de synchronisation (deux flèches circulaires), tourne pendant la synchro. */
+function SyncIcon({ spinning }: { spinning: boolean }) {
+  return (
+    <svg
+      width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+      style={{ flexShrink: 0, animation: spinning ? "ds-spin .8s linear infinite" : undefined }}
+    >
+      <path d="M20 11a8 8 0 00-13.7-5.3L4 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 4v4h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 13a8 8 0 0013.7 5.3L20 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M20 20v-4h-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export default function Dashboard() {
   const [biens, setBiens] = useState<Bien[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -101,7 +116,7 @@ export default function Dashboard() {
         <span className="ds-h2">Biens à la location</span>
         <span className="ds-rule" />
         <button className="ds-btn ds-btn--secondary" onClick={synchroniserApimo} disabled={syncing}>
-          {syncing ? "Synchronisation…" : "Synchroniser Apimo"}
+          <SyncIcon spinning={syncing} /> {syncing ? "Synchronisation…" : "Synchroniser Apimo"}
         </button>
         <button className="ds-btn ds-btn--primary" onClick={() => router.push("/biens/new")}>
           + Nouveau bien
@@ -122,11 +137,15 @@ export default function Dashboard() {
           <div className="ds-row__main">
             <div className="ds-row__title">{b.adresse}</div>
             <div className="ds-row__sub">
-              {eur(b.loyer)} + {eur(b.charges)} charges · revenus exigés ≥ {(b.criteres?.ratioMin ?? 3)}×
+              {eur(b.loyer)} + {eur(b.charges)} charges
             </div>
           </div>
           <div className="ds-row__actions">
-            {b.apimo_id != null && <span className="ds-pill">Apimo</span>}
+            {b.apimo_id != null && (
+              <span className="apimo-tag" title="Bien synchronisé depuis Apimo">
+                <img src="/apimo-logo.svg" alt="Apimo" />
+              </span>
+            )}
             <span className="ds-pill">
               {b.nb_candidats} candidat{b.nb_candidats > 1 ? "s" : ""}
               {b.nb_candidats > 0 ? ` · ${b.nb_analyses} analysé${b.nb_analyses > 1 ? "s" : ""}` : ""}
