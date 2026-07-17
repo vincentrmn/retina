@@ -9,10 +9,12 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
+    "@types/nodemailer": "^8.0.1",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",
     "jszip": "^3.10.1",
     "next": "14.2.35",
+    "nodemailer": "^9.0.3",
     "pg": "8.12.0",
     "react": "18.3.1",
     "react-dom": "18.3.1"

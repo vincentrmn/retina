@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { ensureSchema, pool } from "@/lib/db";
 import { buildCompletude } from "@/lib/synthese";
 import { scoreCandidat } from "@/lib/scoring";
-import type { CoherenceCheck, DocumentMeta, SynthesePersonne } from "@/lib/types";
+import { scoreDiscretionnaire } from "@/lib/discretionnaire";
+import { normalizeCriteres, type CoherenceCheck, type DocumentMeta, type SynthesePersonne } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -29,10 +30,14 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     );
     const meta = docs.rows as DocumentMeta[];
     const analysed = meta.some((d) => d.extraction_status === "done");
+    // Note discrétionnaire (réponses Tally vs préférences du bien), séparée du
+    // score financier.
+    const discretionnaire = scoreDiscretionnaire(normalizeCriteres(rows[0].criteres), rows[0].tally_answers);
     return NextResponse.json({
       ...rows[0],
       documents: meta,
       completude: analysed ? buildCompletude(meta) : null,
+      discretionnaire,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

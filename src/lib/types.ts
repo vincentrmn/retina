@@ -33,6 +33,19 @@ export type Criteres = {
   ancienneteActif: boolean;
   /** Ancienneté minimale dans l'entreprise, en mois. */
   ancienneteMinMois: number;
+
+  // --- Critères DISCRÉTIONNAIRES (préférences du bailleur, comparées aux
+  // réponses déclarées dans le formulaire Tally). Ils ne touchent PAS le score
+  // financier /100 : ils produisent une note séparée de « recommandabilité »
+  // en %. Chaque critère actif compte pour une part égale de ce %.
+  /** Prendre en compte la composition du ménage. */
+  discrCompositionActif: boolean;
+  /** Composition préférée : personne seule ou couple. */
+  discrComposition: "seul" | "couple";
+  /** Préférer un candidat sans animaux de compagnie. */
+  discrSansAnimaux: boolean;
+  /** Préférer une location de longue durée. */
+  discrLongTerme: boolean;
 };
 
 export const DEFAULT_CRITERES: Criteres = {
@@ -46,6 +59,10 @@ export const DEFAULT_CRITERES: Criteres = {
   essaiEliminatoire: false,
   ancienneteActif: false,
   ancienneteMinMois: 0,
+  discrCompositionActif: false,
+  discrComposition: "couple",
+  discrSansAnimaux: false,
+  discrLongTerme: false,
 };
 
 /**
@@ -67,6 +84,10 @@ export function normalizeCriteres(c: any): Criteres {
     essaiEliminatoire: !!c?.essaiEliminatoire,
     ancienneteActif: c?.ancienneteActif ?? anc > 0,
     ancienneteMinMois: anc,
+    discrCompositionActif: !!c?.discrCompositionActif,
+    discrComposition: c?.discrComposition === "seul" ? "seul" : "couple",
+    discrSansAnimaux: !!c?.discrSansAnimaux,
+    discrLongTerme: !!c?.discrLongTerme,
   };
 }
 

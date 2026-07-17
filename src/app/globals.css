@@ -978,6 +978,22 @@ input.crit-num {
 input.crit-num:focus { outline: none; border-color: var(--ds-accent); background: #fff; }
 input.crit-num:disabled { background: var(--ds-bg-subtle); color: var(--ds-ink-faint); }
 input.crit-num::-webkit-outer-spin-button, input.crit-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Petit select inline dans une phrase de critère (composition du ménage). */
+select.crit-select {
+  display: inline-block; width: auto; height: auto; padding: 4px 8px; margin: 0 5px;
+  border: 1px solid var(--ds-line-2, var(--ds-line)); border-radius: var(--ds-r-md);
+  background: #fff; color: var(--ds-ink); font: inherit; font-size: var(--ds-fs-sm);
+  vertical-align: baseline;
+}
+select.crit-select:disabled { background: var(--ds-bg-subtle); color: var(--ds-ink-faint); }
+
+/* Pastille de recommandabilité (note discrétionnaire en %). */
+.discr-pill {
+  display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px;
+  border-radius: var(--ds-r-pill); font-size: var(--ds-fs-xs); font-weight: 700;
+  background: #eef3f6; color: #35596b; border: none;
+}
 /* Puce/toggle « éliminatoire » : rouge si actif, contour gris sinon. */
 .elim-toggle { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--ds-line-2, var(--ds-line)); background: #fff; color: var(--ds-ink-soft); border-radius: var(--ds-r-pill); padding: 6px 13px; font-size: var(--ds-fs-xs); font-weight: 700; cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s, color .12s; }
 .elim-toggle:hover:not(:disabled) { border-color: #e7c3c3; }

@@ -14,6 +14,7 @@ type CandidatRow = {
   source: string | null;
   email: string | null;
   traite: boolean;
+  discr_pct: number | null;
 };
 
 type BienDetail = {
@@ -139,7 +140,7 @@ function TraiteButton({ traite, onToggle }: { traite: boolean; onToggle: () => v
 
 function criteresLignes(raw: any): string[] {
   const cr = normalizeCriteres(raw);
-  return [
+  const lignes = [
     cr.ratioActif
       ? `Revenus nets du ménage exigés : au moins ${cr.ratioMin} fois le montant du loyer et des charges${cr.ratioEliminatoire ? " (critère éliminatoire)" : ""}.`
       : "Aucune exigence de revenus sur ce bien.",
@@ -152,6 +153,11 @@ function criteresLignes(raw: any): string[] {
       : "Les périodes d'essai ne sont pas prises en compte.",
     cr.ancienneteActif && cr.ancienneteMinMois > 0 ? `Ancienneté minimale exigée dans l'entreprise : ${cr.ancienneteMinMois} mois.` : "Aucune ancienneté minimale exigée.",
   ];
+  // Préférences discrétionnaires (recommandabilité), affichées seulement si actives.
+  if (cr.discrCompositionActif) lignes.push(`Préférence de composition : ${cr.discrComposition === "seul" ? "une personne seule" : "un couple"} (recommandabilité).`);
+  if (cr.discrSansAnimaux) lignes.push("Préférence : candidat sans animaux (recommandabilité).");
+  if (cr.discrLongTerme) lignes.push("Préférence : location longue durée, 2 ans et plus (recommandabilité).");
+  return lignes;
 }
 
 export default function BienPage({ params }: { params: { id: string } }) {
@@ -308,6 +314,9 @@ export default function BienPage({ params }: { params: { id: string } }) {
         <span className="ds-rule" />
       </div>
 
+      <p className="ds-hint" style={{ marginTop: 0, marginBottom: 8 }}>
+        Saisissez le nom du dossier (un couple ou une personne seule) pour créer le candidat, puis vous déposerez ses documents.
+      </p>
       <div className="ds-toolbar" style={{ marginBottom: 14 }}>
         <input
           className="ds-input"
@@ -322,11 +331,6 @@ export default function BienPage({ params }: { params: { id: string } }) {
           + Ajouter ce candidat
         </button>
       </div>
-      {!nom.trim() && (
-        <p className="ds-hint" style={{ marginTop: -6, marginBottom: 14 }}>
-          Saisissez le nom du dossier (un couple ou une personne seule) pour créer le candidat, puis vous déposerez ses documents.
-        </p>
-      )}
 
       {bien.candidats.length === 0 && (
         <div className="ds-empty"><span className="ds-empty__hint">Aucun candidat pour ce bien. Ajoutez un dossier ci-dessus, puis déposez ses documents pour lancer l&apos;analyse.</span></div>
@@ -351,6 +355,11 @@ export default function BienPage({ params }: { params: { id: string } }) {
             </div>
           </div>
           <div className="ds-row__actions">
+            {c.discr_pct != null && (
+              <span className="discr-pill" title="Recommandabilité d'après les réponses au questionnaire">
+                ♥ {c.discr_pct}%
+              </span>
+            )}
             <ScorePill score={c.score} />
             <button
               className="ds-btn ds-btn--danger ds-btn--sm"

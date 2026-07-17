@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureSchema, pool } from "@/lib/db";
 import { scoreCandidat } from "@/lib/scoring";
+import { scoreDiscretionnaire } from "@/lib/discretionnaire";
 import { normalizeCriteres, type CoherenceCheck, type SynthesePersonne } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const { rows } = await pool.query(`SELECT * FROM biens WHERE id = $1`, [id]);
     if (!rows.length) return NextResponse.json({ error: "Bien introuvable" }, { status: 404 });
     const candidats = await pool.query(
-      `SELECT c.id, c.nom, c.statut, c.score, c.analysed_at, c.created_at, c.source, c.email, c.telephone, c.traite,
+      `SELECT c.id, c.nom, c.statut, c.score, c.analysed_at, c.created_at, c.source, c.email, c.telephone, c.traite, c.tally_answers,
               COUNT(d.id)::int AS nb_documents
          FROM candidats c
          LEFT JOIN documents d ON d.candidat_id = c.id
@@ -21,9 +22,15 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         ORDER BY COALESCE((c.score->>'total')::numeric, -1) DESC, c.created_at ASC`,
       [id]
     );
+    // Note discrétionnaire par candidat (préférences du bien vs réponses Tally).
+    const crit = normalizeCriteres(rows[0].criteres);
+    const candidatsOut = candidats.rows.map(({ tally_answers, ...c }) => ({
+      ...c,
+      discr_pct: scoreDiscretionnaire(crit, tally_answers)?.pct ?? null,
+    }));
     // Un candidat est « analysé » dès qu'il a un score, même si un document a
     // échoué (statut erreur_document mais score calculé sur les docs restants).
-    const nbAnalyses = candidats.rows.filter((c) => c.score != null).length;
+    const nbAnalyses = candidatsOut.filter((c) => c.score != null).length;
     // Lien de candidature en ligne : l'URL Tally directe (domaine tally.so,
     // décision Vincent : ne pas exposer le domaine RETINA aux candidats).
     // Les champs cachés rattachent la soumission au bien et affichent
@@ -33,8 +40,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       : null;
     return NextResponse.json({
       ...rows[0],
-      candidats: candidats.rows,
-      nb_candidats: candidats.rows.length,
+      candidats: candidatsOut,
+      nb_candidats: candidatsOut.length,
       nb_analyses: nbAnalyses,
       tally_url: tallyUrl,
     });

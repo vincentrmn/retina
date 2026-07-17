@@ -170,6 +170,62 @@ export default function BienForm({ bienId }: { bienId?: number }) {
         </p>
       </div></div>
 
+      {/* Préférences discrétionnaires : comparées aux réponses du formulaire de
+          candidature, elles donnent une note de recommandabilité séparée. */}
+      <div className="ds-section"><span className="ds-h2">Préférences discrétionnaires</span><span className="ds-rule" /></div>
+      <div className="ds-card"><div className="ds-card__body">
+        <div className="crit-list">
+          {/* Composition du ménage */}
+          <div className="crit-row" data-inactive={!criteres.discrCompositionActif || undefined}>
+            <Toggle checked={criteres.discrCompositionActif} onChange={(v) => setC("discrCompositionActif", v)} />
+            <div className="crit-main">
+              <p className="crit-text">
+                <span className="crit-name">Composition du ménage</span> : vous préférez
+                <select
+                  className="ds-select crit-select"
+                  disabled={!criteres.discrCompositionActif}
+                  value={criteres.discrComposition}
+                  onChange={(e) => setC("discrComposition", e.target.value === "seul" ? "seul" : "couple")}
+                >
+                  <option value="seul">une personne seule</option>
+                  <option value="couple">un couple</option>
+                </select>
+                .
+              </p>
+            </div>
+            <div className="crit-ctrl" />
+          </div>
+
+          {/* Animaux */}
+          <div className="crit-row" data-inactive={!criteres.discrSansAnimaux || undefined}>
+            <Toggle checked={criteres.discrSansAnimaux} onChange={(v) => setC("discrSansAnimaux", v)} />
+            <div className="crit-main">
+              <p className="crit-text">
+                <span className="crit-name">Sans animaux</span> : vous préférez un candidat sans animaux de compagnie.
+              </p>
+            </div>
+            <div className="crit-ctrl" />
+          </div>
+
+          {/* Longue durée */}
+          <div className="crit-row" data-inactive={!criteres.discrLongTerme || undefined}>
+            <Toggle checked={criteres.discrLongTerme} onChange={(v) => setC("discrLongTerme", v)} />
+            <div className="crit-main">
+              <p className="crit-text">
+                <span className="crit-name">Location longue durée</span> : vous préférez un projet de location de 2 ans et plus.
+              </p>
+            </div>
+            <div className="crit-ctrl" />
+          </div>
+        </div>
+        <p className="ds-hint">
+          Ces préférences ne touchent <strong>pas</strong> le score financier sur 100. Elles produisent une note séparée
+          de <strong>recommandabilité en %</strong> : plus les réponses du candidat au formulaire de candidature
+          correspondent à vos préférences, plus le pourcentage est élevé. Un candidat encodé à la main (sans
+          questionnaire) n&apos;a pas cette note.
+        </p>
+      </div></div>
+
       {/* Explication de la méthode de calcul */}
       <div className="ds-section"><span className="ds-h2">Comment le score est-il calculé ?</span><span className="ds-rule" /></div>
       <div className="ds-card"><div className="ds-card__body">

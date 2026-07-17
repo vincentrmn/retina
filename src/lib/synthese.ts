@@ -453,18 +453,20 @@ export function buildCoherence(docs: DocumentMeta[], now = new Date()): Coherenc
           const [cy, cm] = periods[i].split("-").map(Number);
           if ((cy - py) * 12 + (cm - pm) !== 1) consecutifs = false;
         }
-        const ok = recent && (periods.length < 2 || consecutifs);
+        const troisFournis = periods.length >= 3;
+        const ok = troisFournis && recent && consecutifs;
         const liste = periods.join(", ");
         const soucis: string[] = [];
-        if (!recent) soucis.push(`la fiche de paie la plus récente (${last}) date de plus de 3 mois`);
+        if (!troisFournis) soucis.push(`seulement ${periods.length} bulletin${periods.length > 1 ? "s" : ""} fourni${periods.length > 1 ? "s" : ""} (les 3 derniers sont attendus)`);
+        if (!recent) soucis.push(`le dernier bulletin fourni (${last}) n'est pas parmi les mois les plus récents`);
         if (!consecutifs) soucis.push("les mois fournis ne se suivent pas");
         checks.push({
           personne: p,
-          check: "Les fiches de paie sont récentes et se suivent",
+          check: "Les 3 derniers bulletins de salaire sont fournis",
           ok,
           detail: ok
-            ? `Fiches de paie fournies : ${liste}. Elles sont récentes et se suivent mois par mois.`
-            : `Fiches de paie fournies : ${liste}. Attention : ${soucis.join(" et ")}.`,
+            ? `Bulletins fournis : ${liste}. Ce sont bien les 3 derniers mois, consécutifs.`
+            : `Bulletins fournis : ${liste}. Attention : ${soucis.join(" ; ")}.`,
         });
       }
     }
@@ -547,13 +549,16 @@ export function buildCompletude(docs: DocumentMeta[], now = new Date()): Complet
       }
       if (paies.length >= 3 && recent) {
         statut = "ok";
-        detail = `${paies.length} bulletins, le dernier est récent`;
+        detail = "les 3 derniers mois sont fournis";
       } else {
         statut = "partiel";
-        detail = `${paies.length} bulletin${paies.length > 1 ? "s" : ""} sur 3 attendus${last && !recent ? ", le dernier date de " + last : ""}`;
+        detail =
+          paies.length >= 3 && last
+            ? `3 bulletins fournis mais le dernier (${last}) n'est pas récent : les 3 DERNIERS mois sont attendus`
+            : `${paies.length} bulletin${paies.length > 1 ? "s" : ""} sur les 3 derniers attendus${last && !recent ? ", le dernier date de " + last : ""}`;
       }
     }
-    items.push({ personne: p, label: "3 derniers bulletins de salaire", statut, detail });
+    items.push({ personne: p, label: "Les 3 derniers bulletins de salaire", statut, detail });
   }
 
   // Documents non reconnus (aucun document exploitable trouvé dans le fichier)

@@ -22,6 +22,10 @@ type CandidatDetail = {
   telephone: string | null;
   source: string | null;
   tally_answers: { label: string; value: string }[] | null;
+  discretionnaire: {
+    pct: number;
+    details: { label: string; attendu: string; declare: string | null; ok: boolean }[];
+  } | null;
   error?: string;
 };
 
@@ -154,6 +158,8 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
   const [err, setErr] = useState("");
   const [analysing, setAnalysing] = useState(false);
   const [cohBusy, setCohBusy] = useState<number | null>(null);
+  const [relanceBusy, setRelanceBusy] = useState(false);
+  const [relanceMsg, setRelanceMsg] = useState("");
 
   const load = useCallback(async () => {
     const c = await fetch(`/api/candidats/${id}`).then((x) => x.json());
@@ -182,6 +188,24 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
       return;
     }
     await load(); // le statut passe à analyse_en_cours, le polling prend le relais
+  }
+
+  async function relancer() {
+    setRelanceBusy(true);
+    setRelanceMsg("");
+    try {
+      const res = await fetch(`/api/candidats/${id}/relance`, { method: "POST" });
+      const data = await res.json();
+      setRelanceMsg(
+        res.ok
+          ? `E-mail de relance envoyé à ${data.email}.`
+          : data.error || "Envoi impossible."
+      );
+    } catch (e: any) {
+      setRelanceMsg("Envoi impossible : " + (e?.message ?? e));
+    } finally {
+      setRelanceBusy(false);
+    }
   }
 
   // Polling tant qu'une analyse est en cours (lancée ici, depuis une autre page,
@@ -241,6 +265,7 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
 
   const personnes: Personne[] = ["A", "B"];
   const nbDocs = cand.documents.length;
+  const dossierIncomplet = !!cand.completude && cand.completude.some((c) => c.statut !== "ok");
   const dejaExtraits = cand.documents.filter((d) => d.extraction_status === "done").length;
   const aAnalyser = cand.documents.some((d) => d.extraction_status !== "done");
   const analyseFaite = !!cand.score;
@@ -372,6 +397,14 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
           {cand.completude.filter((c) => c.personne === "?").map((c, i) => (
             <div className="ds-error" key={i} style={{ marginTop: 10 }}>{c.label} : {c.detail}</div>
           ))}
+          {dossierIncomplet && cand.email && (
+            <div style={{ marginTop: 12 }}>
+              <button className="ds-btn ds-btn--secondary" onClick={relancer} disabled={relanceBusy}>
+                {relanceBusy ? "Envoi…" : "Relancer par mail pour compléter le dossier"}
+              </button>
+              {relanceMsg && <p className="ds-hint" style={{ marginTop: 8, marginBottom: 0 }}>{relanceMsg}</p>}
+            </div>
+          )}
         </>
       )}
 
@@ -422,6 +455,45 @@ export default function CandidatPage({ params }: { params: { id: string } }) {
               </div>
             </div>
           </div>
+        </>
+      )}
+
+      {/* ── Recommandabilité (note discrétionnaire depuis les réponses Tally) ─ */}
+      {cand.discretionnaire && (
+        <>
+          <div className="ds-section"><span className="ds-h2">Recommandabilité</span><span className="ds-rule" />
+            <span className="ds-muted" style={{ fontSize: "var(--ds-fs-sm)" }}>d&apos;après le questionnaire</span>
+          </div>
+          <div className="ds-card"><div className="ds-card__body">
+            <div className="ds-stats" style={{ marginBottom: 14 }}>
+              <div className="ds-stat">
+                <span className="ds-stat__k">Correspond à vos préférences</span>
+                <span className="ds-stat__v ds-num" style={{ color: cand.discretionnaire.pct >= 67 ? "#07875f" : cand.discretionnaire.pct >= 34 ? "#9a6700" : "#b3261e" }}>
+                  {cand.discretionnaire.pct}%
+                </span>
+              </div>
+            </div>
+            <div className="score-list">
+              {cand.discretionnaire.details.map((d, i) => (
+                <div className="score-row" key={i}>
+                  <span className="score-row__label" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <span className={`ds-dot${d.ok ? "" : " ds-dot--warn"}`} /> {d.label}
+                  </span>
+                  <span className="score-row__detail">
+                    {d.declare == null
+                      ? "non renseigné dans le questionnaire"
+                      : d.ok
+                      ? `souhaité : ${d.attendu} — le candidat correspond (${d.declare}).`
+                      : `souhaité : ${d.attendu} — le candidat déclare : ${d.declare}.`}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="ds-hint" style={{ marginBottom: 0 }}>
+              Note indicative, distincte du score financier : elle mesure à quel point les réponses déclarées collent
+              à vos préférences pour ce bien. Elle n&apos;écarte aucun candidat.
+            </p>
+          </div></div>
         </>
       )}
 
