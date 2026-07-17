@@ -439,6 +439,15 @@ n'est PAS un bug.**
 3. **Layout robuste = grille alignée**, pas des champs qui flottent dans un flex. Pour une rangée
    « [contrôle] texte [contrôle] », utiliser `display:grid; grid-template-columns: auto 1fr auto;
    align-items:center` → tout s'aligne quelle que soit la longueur du texte.
+4. **MCP Tally `create_blocks` abandonne silencieusement des champs de saisie « nus » créés en lot.**
+   Un lot contenant plusieurs `INPUT_DATE`/`INPUT_EMAIL`/`INPUT_PHONE_NUMBER`/`MULTIPLE_CHOICE_OPTION`
+   sans TITLE (label en placeholder) en perd une partie **sans erreur** (déterministe, reproduit en
+   insertion ET en append). Un champ nu créé SEUL passe. ⇒ créer ces champs **un par un** et **vérifier
+   le nombre créé** (`blockUuids.length` du retour) après chaque appel. Les questions TITLE + options
+   se créent en lot sans souci. Corollaire : **rien n'est live tant que `save_form` n'est pas appelé**
+   (le working draft est en mémoire) → on peut expérimenter sans risque pour le formulaire de prod, mais
+   **impossible de vérifier visuellement** le rendu (le proxy egress bloque `tally.so` dans Playwright) :
+   se fier au ledger (types, `## Page flow`, `## Logic rules`).
 
 ### Méthode de test (à réutiliser partout)
 
@@ -598,8 +607,55 @@ cases fixes) ; bascule optimiste (pas de rechargement).
 - **Tally** : texte d'accueil enrichi d'une prévention « À préparer dès maintenant » (pièce d'identité,
   3 dernières fiches de salaire, contrat / ou docs indépendant), pour que les candidats aient les
   fichiers prêts avant la page upload.
-- **En attente de décision Vincent** : version anglaise du formulaire Tally (choix de langue au début).
-  Deux options soumises (2 formulaires vs 1 formulaire à logique conditionnelle) — voir question posée.
+- **Formulaire Tally bilingue (choix de langue au début)** : décision prise + tentative de build +
+  blocage tooling découvert, détaillés dans la section « Formulaire Tally bilingue » juste ci-dessous.
+
+### Formulaire Tally bilingue FR/EN (17/07/2026) — décision, build tenté, BLOQUÉ par un bug tooling
+
+**Décision Vincent** : **Option 1** — UN seul formulaire (`ob1NPX`), choix de langue au tout début,
+chaque bloc dupliqué FR/EN, un seul lien, un seul webhook. (Écarté : 2 formulaires séparés.) Vincent
+a validé « le formulaire est stable, on maintiendra les 2 langues ». Design retenu :
+
+- **Sélecteur de langue** en tête de page 1 (« Dans quelle langue... / In which language... » →
+  `Français` / `English`), avant l'intro.
+- **Deux blocs partagés (intro page 1, page de remerciement) gérés par visibilité conditionnelle**
+  selon la langue (JAMAIS les deux langues empilées — Vincent a explicitement refusé l'empilement :
+  une 1ʳᵉ tentative qui fusionnait FR+EN dans un même bloc d'intro a été rejetée).
+- **Pages EN jumelles** (consentement, identité, situation, projet, à propos, documents) placées
+  après les pages FR ; **saut de page par langue** : page 1 → si English, `JUMP TO` la 1ʳᵉ page EN ;
+  page documents FR → `JUMP TO` la page de remerciement (repositionnée en toute fin) pour sauter les
+  pages EN. Les pages EN répliquent EXACTEMENT la structure FR (champs secondaires cachés + 17 règles
+  de révélation `co-titulaire = Oui`), pattern éprouvé du FR.
+
+**⚠️ BLOCAGE MAJEUR — bug déterministe de `create_blocks` (MCP Tally)** : lors de la création de
+plusieurs **champs de saisie « nus »** (sans TITLE, label en placeholder — le style imposé par Vincent
+« nom du champ DANS le champ ») dans un même appel, l'API **abandonne silencieusement** certains blocs.
+Reproduit 3 fois (insertion au milieu ET append en fin) : la page identité perdait **12 blocs sur 26**
+à chaque fois — systématiquement les `INPUT_DATE`, `INPUT_EMAIL`, `INPUT_PHONE_NUMBER`, les options
+`MULTIPLE_CHOICE_OPTION` (Oui/Non) et les 2 premiers `INPUT_TEXT` après un heading (Nom/Prénom) ;
+survivaient Rue/Ville/Code postal/Pays. Les pages faites d'un TITLE + options (situation, projet,
+documents) se créaient parfaitement. **Diagnostic confirmé** : un `INPUT_EMAIL` nu créé SEUL passe
+sans problème → le bug ne touche que les **lots** de champs nus. **Contournement = créer ces champs
+UN PAR UN** (fastidieux : ~10 appels rien que pour l'identité, chacun renvoyant tout le ledger ~15k
+tokens).
+
+**État à la fin de la session** : build **NON terminé et NON sauvegardé**. Le formulaire de prod
+`ob1NPX` est **INTACT** (seul `save_form` persiste, jamais appelé — tout le brouillon bilingue vivait
+dans le working draft en mémoire, abandonné). La version FR live reste celle validée par Shawna.
+
+**Pour finir proprement (prochaine session)** — deux voies :
+1. **Dupliquer les pages FR dans l'UI Tally** (fonction « duplicate page » de l'app, qui clone les
+   champs de façon fiable, ce que l'API ne sait pas faire), puis traduire les libellés en EN. Le plus
+   sûr, mais manuel.
+2. **Reprendre le build API un champ à la fois** (contournement prouvé ci-dessus), avec un budget de
+   contexte dédié, puis câbler : sauts de langue + visibilité intro/remerciement + révélations EN +
+   `configure_blocks` file upload (multiple, 20 fichiers, 10 Mo, types PDF/JPEG/PNG/WebP/HEIC) +
+   `reposition_pages` (identité en slot 9, remerciement en dernier).
+- **Dans les deux cas**, étendre ensuite le **webhook** (`src/app/api/webhooks/tally/route.ts` :
+  `nomDossier`/`valeurLisible`/`reponses` matchent des libellés FR par regex → ajouter les libellés EN
+  « Last name »/« First name », options Yes/No, etc.) ET **`src/lib/discretionnaire.ts`** (matchers
+  composition/animaux/durée à étendre aux libellés + valeurs EN). Sans ça, une candidature en anglais
+  serait mal nommée / mal scorée en recommandabilité.
 
 **Reste à faire / SPRINT 2 (ouvert par Vincent le 03/07/2026)** :
 1. **Employeur dominant** (constat dossier LANG-STREE) : afficher l'employeur le plus fréquent des
@@ -615,6 +671,9 @@ cases fixes) ; bascule optimiste (pas de rechargement).
    **envoi automatique du lien Tally** aux candidats entrants (via Make, comme le parcours achat) ;
    **authentification RETINA** quand BBI passe sur Google Workspace ; **cron de synchro Apimo**
    (aujourd'hui bouton manuel) ; conversion HEIC si des candidats en envoient beaucoup.
+6. **(17/07)** **Terminer le formulaire Tally bilingue** (option 1, cf. section dédiée) : build
+   interrompu par le bug `create_blocks` (lots de champs nus) ; reprendre via l'UI Tally « duplicate
+   page » ou un par un, puis étendre webhook + `discretionnaire.ts` aux libellés anglais.
 
 ## Conventions pour Claude Code
 
