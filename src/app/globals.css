@@ -1014,13 +1014,12 @@ input.crit-num::-webkit-outer-spin-button, input.crit-num::-webkit-inner-spin-bu
 .brand-home {
   font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
   font-weight: 800;
-  font-size: 76px; /* encre des capitales = 54px = hauteur du logo */
+  font-size: 48px; /* capitales ~34px : présent sans dominer le logo (retour Vincent) */
   line-height: 1;
   letter-spacing: -0.02em;
 }
-/* Mobile : le couple logo + RETINA est réduit d'un tiers pour tenir en largeur,
-   en gardant l'égalité des hauteurs (36px). */
+/* Mobile : le couple logo + RETINA est réduit d'un tiers pour tenir en largeur. */
 @media (max-width: 760px) {
-  .brand-home { font-size: 50px; }
+  .brand-home { font-size: 32px; }
   .brand-home::before { width: 87px; height: 36px; }
 }
