@@ -565,6 +565,42 @@ Le Google Sheets sort du circuit : les données Tally vivent dans le Postgres RE
   retirées de Railway. L'app reste ouverte : ne pas diffuser le domaine RETINA aux candidats.
 - **Cadratins** : les 2 derniers `—` de textes UI (hint documents + dropzone) remplacés par des virgules.
 
+### Retours Vincent (17/07/2026) — lot UI + 2 features (recommandabilité, relance mail)
+
+Livré et déployé. **UI** : marque RETINA en Poppins ExtraBold (auto-hébergée, `public/fonts/`),
+réglée à 48px après retour « trop gros » ; header de la page bien restructuré (`topbar--split` : marque
++ boutons sur une ligne, **titre du bien sur sa propre ligne** en dessous, `.page-title-lg`) ; bouton
+export raccourci « Exporter » + icône PDF (hauteur identique aux autres, 38px) ; icône de synchro
+(tournante) sur « Synchroniser Apimo » ; cartes de la liste des biens réduites à **loyer + charges**
+(ratio retiré) ; **tag Apimo remplacé par le logo officiel** (`public/apimo-logo.svg`, wordmark teal
+`#223d46` assemblé depuis les vecteurs de marque `logo-a` + `logo-pimo` d'apimo.com, alignement calé
+visuellement) ; bouton « Traité » à gabarit ENTIÈREMENT figé (le décalage venait de l'alignement sur
+la ligne de base du texte : hauteur de ligne variable selon le check → bouton sorti du flux, flex,
+cases fixes) ; bascule optimiste (pas de rechargement).
+
+- **Bulletins « les 3 derniers »** (pas « récents ») : cohérence + complétude reformulées, la cohérence
+  exige désormais 3 bulletins consécutifs ET récents.
+- **Feature RECOMMANDABILITÉ (score discrétionnaire, séparé du /100)** : `src/lib/discretionnaire.ts`
+  compare les **préférences du bailleur** (nouveaux critères du bien : composition seul/couple, sans
+  animaux, longue durée — dans `Criteres`, `normalizeCriteres`, `BienForm` section « Préférences
+  discrétionnaires ») aux **réponses déclarées dans Tally** (`candidats.tally_answers`). `% = part des
+  préférences satisfaites`, `null` si aucune préférence active OU candidat sans questionnaire (encodé à
+  la main). Affiché : pastille `♥ %` sur la liste des candidats (`discr_pct` dans `GET biens/[id]`),
+  carte « Recommandabilité » détaillée sur la fiche candidat (`discretionnaire` dans `GET candidats/[id]`),
+  préférences listées sur la carte critères du bien. Testé : 100 % (3/3), 67 % (2/3), 33 % (1/3), null.
+- **Feature RELANCE MAIL** (`src/lib/mail.ts` + `POST /api/candidats/[id]/relance`) : bouton « Relancer
+  par mail pour compléter le dossier » sous la carte complétude (visible seulement si dossier incomplet
+  ET email présent). Liste les documents manquants (`buildCompletude`, items ≠ ok) et envoie un mail au
+  candidat via **Gmail SMTP BBI** (nodemailer, env `BBI_GMAIL_USER` / `BBI_GMAIL_APP_PASSWORD` /
+  `BBI_MAIL_FROM_NAME`). **Gated** : 503 propre si non configuré (comme la clé Anthropic). ⚠️ **À
+  brancher** : il faut un **mot de passe d'application Google** sur un compte BBI (2FA requise), posé
+  sur Railway, puis un test réel — non testé bout-en-bout faute d'identifiants.
+- **Tally** : texte d'accueil enrichi d'une prévention « À préparer dès maintenant » (pièce d'identité,
+  3 dernières fiches de salaire, contrat / ou docs indépendant), pour que les candidats aient les
+  fichiers prêts avant la page upload.
+- **En attente de décision Vincent** : version anglaise du formulaire Tally (choix de langue au début).
+  Deux options soumises (2 formulaires vs 1 formulaire à logique conditionnelle) — voir question posée.
+
 **Reste à faire / SPRINT 2 (ouvert par Vincent le 03/07/2026)** :
 1. **Employeur dominant** (constat dossier LANG-STREE) : afficher l'employeur le plus fréquent des
    bulletins (et signaler « plusieurs employeurs ») au lieu du premier trouvé. Cosmétique, sûr.
