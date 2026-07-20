@@ -39,9 +39,13 @@ export function scoreDiscretionnaire(
   const details: DiscretionnaireDetail[] = [];
 
   // Composition du ménage : « second co-titulaire ? » Oui => couple, Non => seul.
+  // Libellés FR et EN (formulaire bilingue).
   if (criteres.discrCompositionActif) {
-    const second = trouve(rep, /second.*co-?titulaire|deuxi[eè]me (candidat|personne)/i);
-    const declare = second == null ? null : /^oui/i.test(second) ? "couple" : "seul";
+    const second = trouve(
+      rep,
+      /second.*co-?titulaire|deuxi[eè]me (candidat|personne)|second.*co-?tenant|second (candidate|applicant)/i
+    );
+    const declare = second == null ? null : /^(oui|yes)/i.test(second) ? "couple" : "seul";
     const attendu = criteres.discrComposition;
     details.push({
       label: attendu === "seul" ? "Personne seule" : "Couple",
@@ -52,9 +56,10 @@ export function scoreDiscretionnaire(
   }
 
   // Animaux de compagnie : « Avez-vous des animaux ? » Non => pas d'animaux.
+  // Libellés FR (« animaux ») et EN (« pets »).
   if (criteres.discrSansAnimaux) {
-    const anim = trouve(rep, /animaux/i);
-    const declare = anim == null ? null : /^non/i.test(anim) ? "aucun" : "au moins un";
+    const anim = trouve(rep, /animaux|pets/i);
+    const declare = anim == null ? null : /^(non|no)/i.test(anim) ? "aucun" : "au moins un";
     details.push({
       label: "Sans animaux",
       attendu: "pas d'animaux",
@@ -63,10 +68,11 @@ export function scoreDiscretionnaire(
     });
   }
 
-  // Durée envisagée : longue durée = 2 ans et plus.
+  // Durée envisagée : longue durée = 2 ans et plus. Libellés/valeurs FR et EN.
   if (criteres.discrLongTerme) {
-    const duree = trouve(rep, /dur[ée]e.*location|dur[ée]e envisag/i);
-    const longue = duree != null && /(2 et 5|plus de 5|long terme)/i.test(duree);
+    const duree = trouve(rep, /dur[ée]e.*location|dur[ée]e envisag|expected rental duration|rental duration/i);
+    const longue =
+      duree != null && /(2 et 5|plus de 5|long terme|2 and 5|more than 5|long term)/i.test(duree);
     details.push({
       label: "Location longue durée",
       attendu: "2 ans et plus",

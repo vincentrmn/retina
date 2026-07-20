@@ -40,23 +40,27 @@ function texte(v: unknown): string {
 
 /**
  * Nom du dossier depuis le questionnaire : les questions « Nom » et « Prénom »
- * existent pour le candidat principal et (masquées par logique conditionnelle)
- * pour le second co-titulaire — on apparie par ordre d'apparition.
+ * (FR) ou « Last name » et « First name » (EN, formulaire bilingue) existent
+ * pour le candidat principal et (masquées par logique conditionnelle) pour le
+ * second co-titulaire — on apparie par ordre d'apparition. Une seule langue est
+ * remplie par soumission ; les champs de l'autre langue arrivent vides et sont
+ * ignorés (filtre Boolean plus bas).
  */
 function nomDossier(fields: TallyField[]): string {
   const par = (motif: RegExp) =>
     fields.filter((f) => f.type === "INPUT_TEXT" && motif.test(f.label.trim())).map((f) => texte(f.value));
-  const noms = par(/^nom$/i);
-  const prenoms = par(/^pr[ée]nom$/i);
+  const noms = par(/^(nom|last name)$/i);
+  const prenoms = par(/^(pr[ée]nom|first name)$/i);
   const personnes: string[] = [];
   for (let i = 0; i < Math.max(noms.length, prenoms.length); i++) {
     const complet = [prenoms[i], noms[i]].filter(Boolean).join(" ").trim();
     if (complet) personnes.push(complet);
   }
   if (personnes.length) return personnes.join(" et ");
-  // Repli (ancien formulaire) : tout champ texte dont le libellé contient « nom ».
+  // Repli (ancien formulaire) : tout champ texte dont le libellé contient « nom »
+  // (FR) ou « name » (EN).
   return fields
-    .filter((f) => f.type === "INPUT_TEXT" && /nom/i.test(f.label))
+    .filter((f) => f.type === "INPUT_TEXT" && /nom|name/i.test(f.label))
     .map((f) => texte(f.value))
     .filter(Boolean)
     .join(" et ");
@@ -134,8 +138,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: `Bien introuvable (champ caché bien=${texte(bienField?.value) || "absent"})` });
     }
 
-    const email = texte(fields.find((f) => f.type === "INPUT_EMAIL")?.value) || null;
-    const telephone = texte(fields.find((f) => f.type === "INPUT_PHONE_NUMBER")?.value) || null;
+    // Premier champ NON vide : sur le formulaire bilingue, les champs de la
+    // langue non choisie arrivent vides et peuvent précéder ceux remplis.
+    const premierNonVide = (type: string) =>
+      fields.filter((f) => f.type === type).map((f) => texte(f.value)).find(Boolean) || null;
+    const email = premierNonVide("INPUT_EMAIL");
+    const telephone = premierNonVide("INPUT_PHONE_NUMBER");
     const nom = nomDossier(fields) || email || "Candidature en ligne";
 
     const insert = await pool.query(
