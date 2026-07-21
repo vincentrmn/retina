@@ -120,25 +120,24 @@ function suiviPillStyle(actif: boolean, s: (typeof SUIVIS)[number]): CSSProperti
  * Suivi de Shawna : statut du dossier (appel, visite, dépôt, refus).
  * Tant qu'aucun statut n'est choisi, les 4 boutons gris s'affichent côte à côte.
  * Dès qu'on en clique un, il s'affiche SEUL (coloré) — les dossiers traités
- * s'alignent ainsi, plus lisibles. Recliquer sur le statut rouvre les 4 boutons
- * pour le corriger (recliquer sur le statut actif le retire). Aucun effet score.
+ * s'alignent ainsi, plus lisibles. Recliquer sur la pastille désélectionne tout
+ * (retour aux 4 boutons gris) pour re-choisir. Aucun effet sur le score.
  */
 function SuiviControl({ suivi, onSet }: { suivi: SuiviKey | null; onSet: (v: SuiviKey | null) => void }) {
-  const [editing, setEditing] = useState(false);
   const stop = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
   };
   const courant = SUIVIS.find((s) => s.key === suivi);
-  const toutMontrer = suivi == null || editing;
 
-  if (!toutMontrer && courant) {
+  // Statut choisi : une seule pastille colorée ; la recliquer désélectionne.
+  if (courant) {
     return (
       <button
-        title="Cliquer pour modifier le statut de suivi"
+        title="Cliquer pour désélectionner et choisir un autre statut"
         onClick={(e) => {
           stop(e);
-          setEditing(true);
+          onSet(null);
         }}
         style={suiviPillStyle(true, courant)}
       >
@@ -147,25 +146,22 @@ function SuiviControl({ suivi, onSet }: { suivi: SuiviKey | null; onSet: (v: Sui
     );
   }
 
+  // Aucun statut : les 4 boutons gris, tous désélectionnés.
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-      {SUIVIS.map((s) => {
-        const actif = s.key === suivi;
-        return (
-          <button
-            key={s.key}
-            title={actif ? "Retirer ce statut" : `Marquer « ${s.label} »`}
-            onClick={(e) => {
-              stop(e);
-              onSet(actif ? null : s.key); // recliquer l'actif = retirer le statut
-              setEditing(false);
-            }}
-            style={suiviPillStyle(actif, s)}
-          >
-            {s.label}
-          </button>
-        );
-      })}
+      {SUIVIS.map((s) => (
+        <button
+          key={s.key}
+          title={`Marquer « ${s.label} »`}
+          onClick={(e) => {
+            stop(e);
+            onSet(s.key);
+          }}
+          style={suiviPillStyle(false, s)}
+        >
+          {s.label}
+        </button>
+      ))}
     </div>
   );
 }
