@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import { eur } from "@/lib/format";
 import { normalizeCriteres, type Score } from "@/lib/types";
@@ -13,9 +13,18 @@ type CandidatRow = {
   nb_documents: number;
   source: string | null;
   email: string | null;
-  traite: boolean;
+  suivi: SuiviKey | null;
   discr_pct: number | null;
 };
+
+/** Statuts de suivi de Shawna, dans l'ordre du parcours d'un dossier. */
+type SuiviKey = "contacte" | "visite" | "dossier_depose" | "ko";
+const SUIVIS: { key: SuiviKey; label: string; fg: string; bg: string; border: string }[] = [
+  { key: "contacte", label: "Contacté", fg: "#6d28d9", bg: "#f3ebff", border: "#c9b3f5" }, // mauve
+  { key: "visite", label: "Visite", fg: "#1d4ed8", bg: "#e6efff", border: "#aecbfa" }, // bleu
+  { key: "dossier_depose", label: "Dossier déposé", fg: "#07875f", bg: "#e3f7f0", border: "#9fe0c9" }, // vert
+  { key: "ko", label: "KO", fg: "#b3261e", bg: "#fbeaea", border: "#f2b8b5" }, // rouge
+];
 
 type BienDetail = {
   id: number;
@@ -83,58 +92,77 @@ function StatutPill({ statut, score }: { statut: string; score: Score | null }) 
   );
 }
 
+/** Un bouton-pastille de statut (géométrie figée, hauteur constante). */
+function suiviPillStyle(actif: boolean, s: (typeof SUIVIS)[number]): CSSProperties {
+  return {
+    cursor: "pointer",
+    height: 26,
+    padding: "0 12px",
+    boxSizing: "border-box",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    lineHeight: 1,
+    whiteSpace: "nowrap",
+    borderRadius: 999,
+    fontWeight: 600,
+    border: `1px solid ${actif ? s.border : "var(--ds-line-2, var(--ds-line))"}`,
+    background: actif ? s.bg : "transparent",
+    color: actif ? s.fg : "var(--ds-ink-soft)",
+  };
+}
+
 /**
- * Suivi de Shawna : le candidat a-t-il été traité (appelé, mail envoyé...) ?
- * Un clic bascule, un clic sur l'état coché revient en arrière (erreur de
- * manipulation). Purement indicatif, aucun effet sur le score.
+ * Suivi de Shawna : statut du dossier (appel, visite, dépôt, refus).
+ * Tant qu'aucun statut n'est choisi, les 4 boutons gris s'affichent côte à côte.
+ * Dès qu'on en clique un, il s'affiche SEUL (coloré) — les dossiers traités
+ * s'alignent ainsi, plus lisibles. Recliquer sur le statut rouvre les 4 boutons
+ * pour le corriger (recliquer sur le statut actif le retire). Aucun effet score.
  */
-function TraiteButton({ traite, onToggle }: { traite: boolean; onToggle: () => void }) {
-  return (
-    <button
-      className="ds-pill"
-      title={traite ? "Cliquer pour remettre ce candidat en non traité" : "Marquer ce candidat comme traité (appelé, mail envoyé...)"}
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onToggle();
-      }}
-      style={{
-        // Géométrie ENTIÈREMENT figée : largeur ET hauteur fixes, case du
-        // check à taille fixe, libellé ancré à gauche dans une case fixe.
-        // Seuls le texte, la couleur et le check changent, quel que soit le
-        // navigateur ou la police (le glyphe ✓ peut sinon changer la hauteur).
-        cursor: "pointer",
-        width: 112,
-        height: 24,
-        boxSizing: "border-box",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 0,
-        lineHeight: 1,
-        border: `1px solid ${traite ? "#07875f" : "var(--ds-line-2, var(--ds-line))"}`,
-        background: traite ? "#e3f7f0" : "transparent",
-        color: traite ? "#07875f" : "var(--ds-ink-soft)",
-        fontWeight: 600,
-      }}
-    >
-      <span
-        style={{
-          width: 14,
-          height: 14,
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 11,
-          lineHeight: 1,
-          overflow: "hidden",
-          flex: "0 0 auto",
+function SuiviControl({ suivi, onSet }: { suivi: SuiviKey | null; onSet: (v: SuiviKey | null) => void }) {
+  const [editing, setEditing] = useState(false);
+  const stop = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const courant = SUIVIS.find((s) => s.key === suivi);
+  const toutMontrer = suivi == null || editing;
+
+  if (!toutMontrer && courant) {
+    return (
+      <button
+        title="Cliquer pour modifier le statut de suivi"
+        onClick={(e) => {
+          stop(e);
+          setEditing(true);
         }}
+        style={suiviPillStyle(true, courant)}
       >
-        {traite ? "✓" : ""}
-      </span>
-      <span style={{ width: 68, textAlign: "left", flex: "0 0 auto" }}>{traite ? "Traité" : "Non traité"}</span>
-    </button>
+        {courant.label}
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      {SUIVIS.map((s) => {
+        const actif = s.key === suivi;
+        return (
+          <button
+            key={s.key}
+            title={actif ? "Retirer ce statut" : `Marquer « ${s.label} »`}
+            onClick={(e) => {
+              stop(e);
+              onSet(actif ? null : s.key); // recliquer l'actif = retirer le statut
+              setEditing(false);
+            }}
+            style={suiviPillStyle(actif, s)}
+          >
+            {s.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -168,6 +196,9 @@ export default function BienPage({ params }: { params: { id: string } }) {
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Candidats DÉCOCHÉS pour l'export PDF (par défaut tous inclus). Set d'ids :
+  // survit aux rechargements, un nouveau candidat est inclus d'office.
+  const [exclus, setExclus] = useState<Set<number>>(new Set());
   const router = useRouter();
 
   const load = useCallback(async () => {
@@ -191,18 +222,28 @@ export default function BienPage({ params }: { params: { id: string } }) {
 
   // Bascule optimiste : l'état change à l'écran immédiatement, la sauvegarde
   // part en arrière-plan (retour en arrière silencieux si elle échoue).
-  async function toggleTraite(c: CandidatRow) {
-    const poser = (valeur: boolean) =>
+  async function setSuivi(c: CandidatRow, valeur: SuiviKey | null) {
+    const poser = (v: SuiviKey | null) =>
       setBien((prev) =>
-        prev ? { ...prev, candidats: prev.candidats.map((x) => (x.id === c.id ? { ...x, traite: valeur } : x)) } : prev
+        prev ? { ...prev, candidats: prev.candidats.map((x) => (x.id === c.id ? { ...x, suivi: v } : x)) } : prev
       );
-    poser(!c.traite);
+    const avant = c.suivi;
+    poser(valeur);
     const res = await fetch(`/api/candidats/${c.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ traite: !c.traite }),
+      body: JSON.stringify({ suivi: valeur }),
     }).catch(() => null);
-    if (!res || !res.ok) poser(c.traite);
+    if (!res || !res.ok) poser(avant);
+  }
+
+  function toggleExport(cid: number) {
+    setExclus((prev) => {
+      const next = new Set(prev);
+      if (next.has(cid)) next.delete(cid);
+      else next.add(cid);
+      return next;
+    });
   }
 
   async function ajouterCandidat() {
@@ -227,12 +268,15 @@ export default function BienPage({ params }: { params: { id: string } }) {
 
   async function exporterPdf() {
     if (!bien) return;
+    // Seulement les candidats cochés (Shawna exclut les mauvaises notes).
+    const aExporter = bien.candidats.filter((c) => !exclus.has(c.id));
+    if (!aExporter.length) return;
     setExporting(true);
     try {
-      // On récupère la fiche complète de chaque candidat (synthèse + cohérence)
-      // pour l'inclure dans le PDF.
+      // On récupère la fiche complète de chaque candidat retenu (synthèse +
+      // cohérence) pour l'inclure dans le PDF.
       const complets = await Promise.all(
-        bien.candidats.map((c) => fetch(`/api/candidats/${c.id}`).then((r) => r.json()))
+        aExporter.map((c) => fetch(`/api/candidats/${c.id}`).then((r) => r.json()))
       );
       const { exportBienPdf } = await import("@/lib/exportBien");
       await exportBienPdf(bien as any, complets as any);
@@ -249,14 +293,20 @@ export default function BienPage({ params }: { params: { id: string } }) {
   const cout = Number(bien.loyer) + Number(bien.charges);
   const cr = bien.criteres ?? {};
   const nbAnalyses = bien.candidats.filter((c) => c.score != null).length;
+  const nbExport = bien.candidats.filter((c) => !exclus.has(c.id)).length;
 
   return (
     <div className="wrap ds-scope ds-scope--lg">
       <div className="topbar topbar--split">
         <a className="brand-home" href="/" title="Accueil">RETINA</a>
         <div className="topbar-nav">
-          <button className="ds-btn ds-btn--secondary" onClick={exporterPdf} disabled={exporting || nbAnalyses === 0}>
-            <PdfIcon /> {exporting ? "Export…" : "Exporter"}
+          <button
+            className="ds-btn ds-btn--secondary"
+            onClick={exporterPdf}
+            disabled={exporting || nbAnalyses === 0 || nbExport === 0}
+            title={nbExport === 0 ? "Cochez au moins un candidat à exporter" : "Exporter les candidats cochés en PDF"}
+          >
+            <PdfIcon /> {exporting ? "Export…" : nbExport < bien.candidats.length ? `Exporter (${nbExport})` : "Exporter"}
           </button>
           <a className="ds-btn ds-btn--ghost" href={`/biens/${id}/edit`}>Modifier</a>
           <a className="ds-btn ds-btn--ghost" href="/">← Accueil</a>
@@ -336,8 +386,23 @@ export default function BienPage({ params }: { params: { id: string } }) {
         <div className="ds-empty"><span className="ds-empty__hint">Aucun candidat pour ce bien. Ajoutez un dossier ci-dessus, puis déposez ses documents pour lancer l&apos;analyse.</span></div>
       )}
 
+      {bien.candidats.length > 0 && (
+        <p className="ds-hint" style={{ marginTop: 0, marginBottom: 8 }}>
+          Cochez à gauche les candidats à inclure dans l&apos;export PDF (tous cochés par défaut, décochez les dossiers à écarter).
+        </p>
+      )}
+
       {bien.candidats.map((c, i) => (
         <a className="ds-row" key={c.id} href={`/candidats/${c.id}`}>
+          {/* Case d'inclusion dans l'export PDF (cochée par défaut). */}
+          <input
+            type="checkbox"
+            checked={!exclus.has(c.id)}
+            title={exclus.has(c.id) ? "Cliquer pour inclure ce candidat dans l'export PDF" : "Inclus dans l'export PDF (décocher pour l'exclure)"}
+            onClick={(e) => e.stopPropagation()}
+            onChange={() => toggleExport(c.id)}
+            style={{ width: 17, height: 17, flex: "0 0 auto", alignSelf: "center", marginRight: 12, cursor: "pointer", accentColor: "var(--ds-accent, #07875f)" }}
+          />
           <div className="ds-row__main">
             <div className="ds-row__title">
               {c.score ? `${i + 1}. ` : ""}{c.nom}
@@ -348,10 +413,10 @@ export default function BienPage({ params }: { params: { id: string } }) {
                 Éliminé sur : {c.score.criteres.filter((cr) => cr.eliminatoire).map((cr) => cr.label.toLowerCase()).join(", ")}
               </div>
             )}
-            {/* display:flex : le bouton n'est plus aligné sur la ligne de base
-                du texte, dont la position varie selon le contenu (le check). */}
+            {/* Statut de suivi (4 boutons ou pastille seule). display:flex pour
+                détacher de la ligne de base du texte au-dessus. */}
             <div style={{ marginTop: 6, display: "flex" }}>
-              <TraiteButton traite={c.traite} onToggle={() => toggleTraite(c)} />
+              <SuiviControl suivi={c.suivi} onSet={(v) => setSuivi(c, v)} />
             </div>
           </div>
           <div className="ds-row__actions">

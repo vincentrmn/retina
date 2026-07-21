@@ -98,7 +98,21 @@ export function ensureSchema(): Promise<void> {
       // locatif...) : le Postgres RETINA remplace le Google Sheets.
       await pool.query(`ALTER TABLE candidats ADD COLUMN IF NOT EXISTS tally_answers JSONB;`);
       // Suivi de Shawna : a-t-elle traité ce candidat (appel, mail...) ?
+      // Ancien modèle binaire `traite` (conservé pour l'historique) remplacé par
+      // un statut de suivi à plusieurs états (contacté / visite / dossier déposé /
+      // KO ; NULL = pas encore traité).
       await pool.query(`ALTER TABLE candidats ADD COLUMN IF NOT EXISTS traite BOOLEAN NOT NULL DEFAULT false;`);
+      // Migration one-shot : à la création de la colonne `suivi`, on reprend les
+      // candidats déjà marqués « traité » comme « contacté » (état le plus neutre
+      // « quelque chose a été fait »). Gardée sous le garde `information_schema`
+      // pour ne PAS écraser un suivi remis à NULL plus tard par Shawna.
+      const avaitSuivi = await pool.query(
+        `SELECT 1 FROM information_schema.columns WHERE table_name = 'candidats' AND column_name = 'suivi'`
+      );
+      await pool.query(`ALTER TABLE candidats ADD COLUMN IF NOT EXISTS suivi TEXT;`);
+      if (!avaitSuivi.rows.length) {
+        await pool.query(`UPDATE candidats SET suivi = 'contacte' WHERE traite = true`);
+      }
       await pool.query(
         `CREATE UNIQUE INDEX IF NOT EXISTS candidats_tally_submission_idx ON candidats (tally_submission_id) WHERE tally_submission_id IS NOT NULL;`
       );

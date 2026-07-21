@@ -8,6 +8,8 @@ import { normalizeCriteres, type CoherenceCheck, type DocumentMeta, type Synthes
 export const dynamic = "force-dynamic";
 
 const STATUTS = ["en_attente", "analyse", "erreur_document"];
+// Suivi manuel de Shawna : états possibles (NULL = pas encore traité).
+const SUIVIS = ["contacte", "visite", "dossier_depose", "ko"];
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -56,7 +58,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       if (!STATUTS.includes(body.statut)) return NextResponse.json({ error: "Statut invalide" }, { status: 400 });
       await pool.query(`UPDATE candidats SET statut = $1 WHERE id = $2`, [body.statut, id]);
     }
-    // Suivi manuel de Shawna : candidat traité (appelé, mail envoyé...) ou non.
+    // Suivi manuel de Shawna : statut de traitement du dossier. `null` remet le
+    // candidat en « pas encore traité » (aucun bouton sélectionné).
+    if ("suivi" in body) {
+      const v = body.suivi;
+      if (v !== null && !SUIVIS.includes(v)) return NextResponse.json({ error: "Suivi invalide" }, { status: 400 });
+      await pool.query(`UPDATE candidats SET suivi = $1 WHERE id = $2`, [v, id]);
+    }
+    // Compat ascendante : ancien bouton binaire « traité ».
     if (typeof body.traite === "boolean") {
       await pool.query(`UPDATE candidats SET traite = $1 WHERE id = $2`, [body.traite, id]);
     }
