@@ -92,20 +92,24 @@ function StatutPill({ statut, score }: { statut: string; score: Score | null }) 
   );
 }
 
-/** Un bouton-pastille de statut (géométrie figée, hauteur constante). */
+/**
+ * Bouton-pastille de statut, calé sur la même boîte que `.ds-pill` (le tag
+ * « Analysé ») : même font-size, même padding vertical, même line-height, donc
+ * MÊME hauteur. Seules les couleurs et le curseur diffèrent.
+ */
 function suiviPillStyle(actif: boolean, s: (typeof SUIVIS)[number]): CSSProperties {
   return {
     cursor: "pointer",
-    height: 26,
-    padding: "0 12px",
-    boxSizing: "border-box",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    lineHeight: 1,
-    whiteSpace: "nowrap",
-    borderRadius: 999,
+    fontFamily: "inherit",
+    fontSize: "var(--ds-fs-xs)",
     fontWeight: 600,
+    lineHeight: 1.5,
+    padding: "3px 10px",
+    whiteSpace: "nowrap",
+    borderRadius: "var(--ds-r-pill)",
     border: `1px solid ${actif ? s.border : "var(--ds-line-2, var(--ds-line))"}`,
     background: actif ? s.bg : "transparent",
     color: actif ? s.fg : "var(--ds-ink-soft)",
