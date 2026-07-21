@@ -113,6 +113,9 @@ export function ensureSchema(): Promise<void> {
       if (!avaitSuivi.rows.length) {
         await pool.query(`UPDATE candidats SET suivi = 'contacte' WHERE traite = true`);
       }
+      // Inclusion dans l'export PDF par bien : Shawna décoche les dossiers à
+      // écarter. Persisté (survit au rafraîchissement), inclus par défaut.
+      await pool.query(`ALTER TABLE candidats ADD COLUMN IF NOT EXISTS exclu_export BOOLEAN NOT NULL DEFAULT false;`);
       await pool.query(
         `CREATE UNIQUE INDEX IF NOT EXISTS candidats_tally_submission_idx ON candidats (tally_submission_id) WHERE tally_submission_id IS NOT NULL;`
       );

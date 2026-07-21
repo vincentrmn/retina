@@ -14,6 +14,7 @@ type CandidatRow = {
   source: string | null;
   email: string | null;
   suivi: SuiviKey | null;
+  exclu_export: boolean;
   discr_pct: number | null;
 };
 
@@ -196,9 +197,6 @@ export default function BienPage({ params }: { params: { id: string } }) {
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [copied, setCopied] = useState(false);
-  // Candidats DÉCOCHÉS pour l'export PDF (par défaut tous inclus). Set d'ids :
-  // survit aux rechargements, un nouveau candidat est inclus d'office.
-  const [exclus, setExclus] = useState<Set<number>>(new Set());
   const router = useRouter();
 
   const load = useCallback(async () => {
@@ -237,13 +235,20 @@ export default function BienPage({ params }: { params: { id: string } }) {
     if (!res || !res.ok) poser(avant);
   }
 
-  function toggleExport(cid: number) {
-    setExclus((prev) => {
-      const next = new Set(prev);
-      if (next.has(cid)) next.delete(cid);
-      else next.add(cid);
-      return next;
-    });
+  // Inclusion dans l'export PDF, persistée (bascule optimiste comme le suivi).
+  async function toggleExport(c: CandidatRow) {
+    const poser = (v: boolean) =>
+      setBien((prev) =>
+        prev ? { ...prev, candidats: prev.candidats.map((x) => (x.id === c.id ? { ...x, exclu_export: v } : x)) } : prev
+      );
+    const valeur = !c.exclu_export;
+    poser(valeur);
+    const res = await fetch(`/api/candidats/${c.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ excluExport: valeur }),
+    }).catch(() => null);
+    if (!res || !res.ok) poser(c.exclu_export);
   }
 
   async function ajouterCandidat() {
@@ -269,7 +274,7 @@ export default function BienPage({ params }: { params: { id: string } }) {
   async function exporterPdf() {
     if (!bien) return;
     // Seulement les candidats cochés (Shawna exclut les mauvaises notes).
-    const aExporter = bien.candidats.filter((c) => !exclus.has(c.id));
+    const aExporter = bien.candidats.filter((c) => !c.exclu_export);
     if (!aExporter.length) return;
     setExporting(true);
     try {
@@ -293,7 +298,7 @@ export default function BienPage({ params }: { params: { id: string } }) {
   const cout = Number(bien.loyer) + Number(bien.charges);
   const cr = bien.criteres ?? {};
   const nbAnalyses = bien.candidats.filter((c) => c.score != null).length;
-  const nbExport = bien.candidats.filter((c) => !exclus.has(c.id)).length;
+  const nbExport = bien.candidats.filter((c) => !c.exclu_export).length;
 
   return (
     <div className="wrap ds-scope ds-scope--lg">
@@ -400,10 +405,10 @@ export default function BienPage({ params }: { params: { id: string } }) {
           <div className="ds-row__main" style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <input
               type="checkbox"
-              checked={!exclus.has(c.id)}
-              title={exclus.has(c.id) ? "Cliquer pour inclure ce candidat dans l'export PDF" : "Inclus dans l'export PDF (décocher pour l'exclure)"}
+              checked={!c.exclu_export}
+              title={c.exclu_export ? "Cliquer pour inclure ce candidat dans l'export PDF" : "Inclus dans l'export PDF (décocher pour l'exclure)"}
               onClick={(e) => e.stopPropagation()}
-              onChange={() => toggleExport(c.id)}
+              onChange={() => toggleExport(c)}
               style={{ width: 17, height: 17, flex: "0 0 auto", cursor: "pointer", accentColor: "var(--ds-accent, #07875f)" }}
             />
             <div style={{ minWidth: 0 }}>

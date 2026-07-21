@@ -69,6 +69,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (typeof body.traite === "boolean") {
       await pool.query(`UPDATE candidats SET traite = $1 WHERE id = $2`, [body.traite, id]);
     }
+    // Inclusion/exclusion du candidat dans l'export PDF du bien (persisté).
+    if (typeof body.excluExport === "boolean") {
+      await pool.query(`UPDATE candidats SET exclu_export = $1 WHERE id = $2`, [body.excluExport, id]);
+    }
 
     // Validation manuelle d'une incohérence : on marque le contrôle comme ignoré
     // et on recalcule le score depuis la synthèse déjà stockée (zéro coût API).

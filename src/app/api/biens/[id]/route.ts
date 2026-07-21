@@ -13,7 +13,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const { rows } = await pool.query(`SELECT * FROM biens WHERE id = $1`, [id]);
     if (!rows.length) return NextResponse.json({ error: "Bien introuvable" }, { status: 404 });
     const candidats = await pool.query(
-      `SELECT c.id, c.nom, c.statut, c.score, c.analysed_at, c.created_at, c.source, c.email, c.telephone, c.traite, c.suivi, c.tally_answers,
+      `SELECT c.id, c.nom, c.statut, c.score, c.analysed_at, c.created_at, c.source, c.email, c.telephone, c.traite, c.suivi, c.exclu_export, c.tally_answers,
               COUNT(d.id)::int AS nb_documents
          FROM candidats c
          LEFT JOIN documents d ON d.candidat_id = c.id
