@@ -394,29 +394,33 @@ export default function BienPage({ params }: { params: { id: string } }) {
 
       {bien.candidats.map((c, i) => (
         <a className="ds-row" key={c.id} href={`/candidats/${c.id}`}>
-          {/* Case d'inclusion dans l'export PDF (cochée par défaut). */}
-          <input
-            type="checkbox"
-            checked={!exclus.has(c.id)}
-            title={exclus.has(c.id) ? "Cliquer pour inclure ce candidat dans l'export PDF" : "Inclus dans l'export PDF (décocher pour l'exclure)"}
-            onClick={(e) => e.stopPropagation()}
-            onChange={() => toggleExport(c.id)}
-            style={{ width: 17, height: 17, flex: "0 0 auto", alignSelf: "center", marginRight: 12, cursor: "pointer", accentColor: "var(--ds-accent, #07875f)" }}
-          />
-          <div className="ds-row__main">
-            <div className="ds-row__title">
-              {c.score ? `${i + 1}. ` : ""}{c.nom}
-              <StatutPill statut={c.statut} score={c.score} />
-            </div>
-            {c.score?.eliminatoire && (
-              <div className="ds-row__sub" style={{ color: "#b3261e", fontWeight: 600 }}>
-                Éliminé sur : {c.score.criteres.filter((cr) => cr.eliminatoire).map((cr) => cr.label.toLowerCase()).join(", ")}
+          {/* La case d'export vit DANS ds-row__main : la rangée garde ses 2
+              enfants (main + actions), sinon `justify-content:space-between`
+              centrerait le nom. */}
+          <div className="ds-row__main" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <input
+              type="checkbox"
+              checked={!exclus.has(c.id)}
+              title={exclus.has(c.id) ? "Cliquer pour inclure ce candidat dans l'export PDF" : "Inclus dans l'export PDF (décocher pour l'exclure)"}
+              onClick={(e) => e.stopPropagation()}
+              onChange={() => toggleExport(c.id)}
+              style={{ width: 17, height: 17, flex: "0 0 auto", cursor: "pointer", accentColor: "var(--ds-accent, #07875f)" }}
+            />
+            <div style={{ minWidth: 0 }}>
+              <div className="ds-row__title">
+                {c.score ? `${i + 1}. ` : ""}{c.nom}
+                <StatutPill statut={c.statut} score={c.score} />
               </div>
-            )}
-            {/* Statut de suivi (4 boutons ou pastille seule). display:flex pour
-                détacher de la ligne de base du texte au-dessus. */}
-            <div style={{ marginTop: 6, display: "flex" }}>
-              <SuiviControl suivi={c.suivi} onSet={(v) => setSuivi(c, v)} />
+              {c.score?.eliminatoire && (
+                <div className="ds-row__sub" style={{ color: "#b3261e", fontWeight: 600 }}>
+                  Éliminé sur : {c.score.criteres.filter((cr) => cr.eliminatoire).map((cr) => cr.label.toLowerCase()).join(", ")}
+                </div>
+              )}
+              {/* Statut de suivi (4 boutons ou pastille seule). display:flex pour
+                  détacher de la ligne de base du texte au-dessus. */}
+              <div style={{ marginTop: 6, display: "flex" }}>
+                <SuiviControl suivi={c.suivi} onSet={(v) => setSuivi(c, v)} />
+              </div>
             </div>
           </div>
           <div className="ds-row__actions">
