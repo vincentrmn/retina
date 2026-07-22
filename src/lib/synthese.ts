@@ -45,6 +45,7 @@ function douteux<T>(c: Champ<T> | undefined): boolean {
   return !c || c.value == null || c.confiance === "basse";
 }
 
+
 /**
  * Les montants d'un document sont-ils en euros ? Une devise absente vaut EUR
  * (anciennes extractions, ou devise illisible : on ne bloque pas le dossier
@@ -283,9 +284,56 @@ export function buildSynthese(docs: DocumentMeta[], now = new Date()): SyntheseP
         const n = paies.length - paiesEur.length;
         aVerifier.push(`${n} bulletin${n > 1 ? "s" : ""} en devise étrangère (${devisesEtr.join(", ")}) écarté${n > 1 ? "s" : ""} du calcul du salaire`);
       }
-      const nets = paiesEur.map((f) => val(f.salaire_net_mensuel)).filter((v): v is number => v != null);
-      const salaireNet = nets.length ? Math.round((nets.reduce((a, x) => a + x, 0) / nets.length) * 100) / 100 : null;
-      if (paiesEur.some((f) => douteux(f.salaire_net_mensuel))) aVerifier.push("salaire net (bulletin peu lisible)");
+      // Salaire retenu = CASH RÉCURRENT réellement viré. On part du « net à
+      // payer » (le virement) et on retire, au prorata de la part récurrente du
+      // brut de cash, les éléments non récurrents (bonus, avance sur bonus,
+      // rappel, 13e mois...). Les avantages en nature (voiture) ne sont pas du
+      // cash : déjà hors du « net à payer », mais on les sort aussi du brut de
+      // référence pour que le prorata porte bien sur la part récurrente.
+      // Rétrocompat : sans `net_a_payer`/`avantage`/`non_recurrents` (anciennes
+      // extractions), on retombe sur l'ancien calcul (moyenne du net).
+      const recurCash = (f: (typeof paiesEur)[number]): number | null => {
+        const netPaye = val(f.net_a_payer) ?? val(f.salaire_net_mensuel);
+        if (netPaye == null) return null;
+        const brut = val(f.salaire_brut_mensuel);
+        const avNature = val(f.avantage_en_nature) ?? 0;
+        const nonRecur = val(f.elements_non_recurrents) ?? 0;
+        const brutCash = brut != null ? brut - avNature : null;
+        if (brutCash != null && brutCash > 0) {
+          // Prorata de la part récurrente du brut de cash (net/brut effectif).
+          const part = Math.min(1, Math.max(0, (brutCash - nonRecur) / brutCash));
+          return Math.round(netPaye * part * 100) / 100;
+        }
+        // Brut illisible : à défaut de prorata, on retire les non-récurrents en
+        // brut (prudent : on sous-estime plutôt que de laisser passer gonflé).
+        return Math.round(Math.max(0, netPaye - nonRecur) * 100) / 100;
+      };
+      const recurs = paiesEur.map(recurCash).filter((v): v is number => v != null);
+      const salaireNet = recurs.length ? Math.round((recurs.reduce((a, x) => a + x, 0) / recurs.length) * 100) / 100 : null;
+
+      // Contexte + explication des retraitements.
+      const paysMoyen = (sel: (f: (typeof paiesEur)[number]) => number | null) => {
+        const xs = paiesEur.map(sel).filter((v): v is number => v != null && v > 0);
+        return xs.length ? Math.round(xs.reduce((a, x) => a + x, 0) / xs.length) : 0;
+      };
+      const netAPayerMoyen = paiesEur.length
+        ? Math.round((paiesEur.map((f) => val(f.net_a_payer) ?? val(f.salaire_net_mensuel) ?? 0).reduce((a, x) => a + x, 0) / paiesEur.length) * 100) / 100
+        : null;
+      const exclusions: string[] = [];
+      const moyNonRecur = paysMoyen((f) => val(f.elements_non_recurrents));
+      const moyAvNature = paysMoyen((f) => val(f.avantage_en_nature));
+      if (moyNonRecur > 0) {
+        const detail = paiesEur.map((f) => val(f.elements_non_recurrents_detail)).find((v) => v);
+        exclusions.push(`Éléments non récurrents écartés (bonus, avance...) : environ ${money(moyNonRecur)}/mois${detail ? ` (${detail})` : ""}`);
+      }
+      if (moyAvNature > 0) exclusions.push(`Avantage en nature non versé écarté : environ ${money(moyAvNature)}/mois`);
+      if (exclusions.length) {
+        aVerifier.push(
+          `Salaire retenu = cash récurrent (~${money(salaireNet ?? 0)}/mois) après retrait bonus/avance et avantages en nature ; net à payer moyen ~${money(netAPayerMoyen ?? 0)}/mois. À confirmer.`
+        );
+      }
+
+      if (paiesEur.some((f) => douteux(f.salaire_net_mensuel) || douteux(f.net_a_payer))) aVerifier.push("salaire net (bulletin peu lisible)");
       if (!paies.length) aVerifier.push("aucune fiche de paie fournie");
       else if (paies.length < 3) aVerifier.push(`seulement ${paies.length} bulletin${paies.length > 1 ? "s" : ""} (3 recommandés)`);
 
@@ -303,6 +351,8 @@ export function buildSynthese(docs: DocumentMeta[], now = new Date()): SyntheseP
 
       emploi = {
         salaire_net_mensuel: salaireNet,
+        net_a_payer_moyen: netAPayerMoyen,
+        exclusions,
         nbBulletins: paies.length,
         intitule_poste: (contrat ? val(contrat.intitule_poste) : null) ?? paies.map((f) => val(f.intitule_poste)).find((v) => v) ?? null,
         type_contrat: typeContrat,
