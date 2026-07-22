@@ -724,6 +724,26 @@ Livré + déployé (prod).
     (soustraction directe) si brut illisible. Note « à vérifier » + `net_a_payer_moyen`/`exclusions`.
   - **Rétrocompatible** : sans les nouveaux champs (anciennes extractions), on retombe sur l'ancien calcul
     → **les dossiers existants doivent être ré-analysés** (`force:true`) pour bénéficier de la correction.
+  - **Vérifié sur le vrai dossier Lourenco (prod, `force:true`)** : salaire retenu **4 111 €** (au lieu de
+    6 851), net à payer moyen 5 897, exclusions affichées « avance sur bonus 2 500 €/mois » + « avantage en
+    nature 946 €/mois ». Le score reste élevé (94) : le ratio était déjà confortablement au-dessus du seuil,
+    donc un salaire honnête de 4 111 € couvre encore le loyer — le but était un **salaire vrai**, pas un
+    score plus bas.
+
+- **⚠️ BUG LATENT CORRIGÉ — réextraction forcée d'un document « dossier » (400 API).** Découvert en
+  déclenchant `force:true` sur Lourenco : les 4 documents tombaient tous en `erreur_document` avec
+  `400 messages.0.content.1.text.text: Field required`. **Ce n'était PAS le changement de salaire**
+  (reverté puis re-appliqué : erreur identique sans lui). Cause racine : un fichier uploadé en batch est
+  extrait par `extractDocumentAuto` puis **stocké `type='dossier'`**. À la réanalyse **forcée**,
+  `analyse.ts` routait par `if (type==='auto'||type==='autre')` → un `'dossier'` retombait dans la branche
+  **typée** `extractDocument('dossier')`, pour laquelle **il n'existe ni `PROMPTS['dossier']` ni
+  `SCHEMAS['dossier']`** (undefined) → le bloc texte partait sans champ `text`. Latent car l'analyse
+  **normale** saute les documents déjà `done` ; seul `force:true` (ou un ré-run) le déclenchait.
+  **Fix** (`analyse.ts`) : seuls les types LEGACY rattachés à la main (`fiche_paie`/`contrat`/
+  `piece_identite`) passent par l'extraction typée ; **`auto`, `autre` ET `dossier`** repassent par
+  `extractDocumentAuto` (qui redétecte le contenu). **Leçon durable** : un « champ requis manquant » côté
+  API sur un bloc texte = un **prompt `undefined`** en amont (clé de map inexistante), pas un problème de
+  forme de requête ni de version SDK — le corps sérialisé était prouvé correct en local.
 
 **Reste à faire / SPRINT 2 (ouvert par Vincent le 03/07/2026)** :
 1. **Employeur dominant** (constat dossier LANG-STREE) : afficher l'employeur le plus fréquent des
