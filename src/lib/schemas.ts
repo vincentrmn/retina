@@ -61,13 +61,17 @@ const BULLETIN = {
     nom_complet: champ("string", "Nom complet du salarié tel qu'imprimé sur le bulletin"),
     employeur: champ("string", "Nom de l'employeur / raison sociale"),
     periode: champ("string", "Période du bulletin au format YYYY-MM"),
-    salaire_net_mensuel: champ("number", "Salaire NET mensuel, dans la devise du bulletin (net à payer avant impôt si distinction, sinon net à payer)"),
-    salaire_brut_mensuel: champ("number", "Salaire BRUT mensuel, dans la devise du bulletin"),
+    salaire_net_mensuel: champ("number", "Le NET imposable / ligne « Net » du bulletin (net après impôt et cotisations mais AVANT déduction des avantages en nature non versés). Devise du bulletin."),
+    net_a_payer: champ("number", "Le montant réellement VERSÉ / viré au salarié : ligne « A payer », « Net à payer », « Net à verser » ou « Virement ». C'est le CASH reçu. Il peut être plus bas que le « Net » quand un avantage en nature (voiture/logement) est ajouté puis retenu. Si une seule ligne de net existe, reprends-la ici aussi. Devise du bulletin."),
+    salaire_brut_mensuel: champ("number", "Salaire BRUT total (« Brut total »), dans la devise du bulletin"),
+    avantage_en_nature: champ("number", "Total des AVANTAGES EN NATURE (voiture de société, logement...) : montants ajoutés au brut pour être imposés puis RETENUS en bas (non versés en cash). 0 si aucun."),
+    elements_non_recurrents: champ("number", "Somme des montants BRUTS des lignes qui NE sont PAS du salaire de base récurrent : bonus, prime (toute prime ou bonus), AVANCE ou ACOMPTE (sur salaire ou sur bonus), rappel, régularisation, 13e/14e mois, indemnité exceptionnelle, heures supplémentaires exceptionnelles. N'inclus PAS le salaire de base, ni les cotisations/retenues, ni les avantages en nature. 0 si aucune."),
+    elements_non_recurrents_detail: champ("string", "Libellés et montants de ces lignes non récurrentes, pour explication. Ex : « Avance sur bonus 2500 ». null si aucune."),
     devise: DEVISE,
     intitule_poste: champ("string", "Intitulé du poste / fonction si présent"),
     date_entree: champ("string", "Date d'entrée / d'ancienneté dans l'entreprise au format YYYY-MM-DD (souvent en en-tête du bulletin)"),
   },
-  required: ["nom_complet", "employeur", "periode", "salaire_net_mensuel", "salaire_brut_mensuel", "devise", "intitule_poste", "date_entree"],
+  required: ["nom_complet", "employeur", "periode", "salaire_net_mensuel", "net_a_payer", "salaire_brut_mensuel", "avantage_en_nature", "elements_non_recurrents", "elements_non_recurrents_detail", "devise", "intitule_poste", "date_entree"],
   additionalProperties: false,
 };
 
@@ -205,7 +209,14 @@ export const PROMPTS_MULTI: Record<DossierType, string> = {
     "présent, en conservant le nom exact du salarié de chaque bulletin (c'est lui qui permet de rattacher le bulletin " +
     "à la bonne personne). N'invente JAMAIS une valeur : champ absent ou illisible => value=null ou confiance basse. " +
     "Donne les montants TELS QUELS dans la devise du bulletin et renseigne `devise` (code ISO : EUR, MUR, USD...) : ne " +
-    "convertis JAMAIS en euros. Normalise seulement l'écriture (1.234,56 ou 1 234,56 => 1234.56)." + SANS_CADRATIN,
+    "convertis JAMAIS en euros. Normalise seulement l'écriture (1.234,56 ou 1 234,56 => 1234.56). " +
+    "IMPORTANT pour distinguer le vrai salaire versé : `net_a_payer` = le montant réellement VIRÉ (ligne « A payer », " +
+    "« Net à payer », « Virement »), qui peut être plus bas que le « Net » quand un avantage en nature (voiture/logement) " +
+    "est ajouté au brut puis retenu. `avantage_en_nature` = total de ces avantages ajoutés-puis-retenus (0 si aucun). " +
+    "`elements_non_recurrents` = somme BRUTE des lignes qui ne sont pas du salaire de base récurrent (bonus, prime, " +
+    "AVANCE ou ACOMPTE sur salaire/bonus, rappel, régularisation, 13e/14e mois, indemnité, heures sup exceptionnelles), " +
+    "avec leurs libellés dans `elements_non_recurrents_detail` (0 et null si aucune). Ne compte JAMAIS une avance, un " +
+    "acompte ou un bonus comme du salaire de base." + SANS_CADRATIN,
   contrat:
     "Ce fichier peut contenir un ou plusieurs contrats de travail (parfois deux personnes), en scans de qualité " +
     "variable. Produis un élément de `contrats` PAR contrat présent, avec le nom exact du salarié de chaque contrat. " +

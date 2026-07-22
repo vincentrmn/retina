@@ -144,8 +144,17 @@ export type BulletinPaie = {
   employeur: Champ;
   /** Période du bulletin, format YYYY-MM. */
   periode: Champ;
+  /** Ligne « Net » (imposable, après impôt/cotisations, AVANT retenue des avantages en nature). */
   salaire_net_mensuel: Champ<number>;
+  /** Ligne « A payer » / « Net à payer » : le cash réellement viré. Absent sur les anciennes extractions. */
+  net_a_payer?: Champ<number>;
   salaire_brut_mensuel: Champ<number>;
+  /** Avantages en nature (voiture/logement) ajoutés au brut puis retenus (non versés). Absent sur les anciennes extractions. */
+  avantage_en_nature?: Champ<number>;
+  /** Somme brute des lignes non récurrentes (bonus, avance/acompte, rappel, 13e mois...). Absent sur les anciennes extractions. */
+  elements_non_recurrents?: Champ<number>;
+  /** Libellés/montants des lignes non récurrentes, pour explication. */
+  elements_non_recurrents_detail?: Champ;
   /** Code ISO de la devise des montants (EUR, MUR...). Absent sur les anciennes extractions = EUR. */
   devise?: Champ;
   intitule_poste: Champ;
@@ -268,8 +277,14 @@ export type SynthesePersonne = {
      * Revenu mensuel net de la personne. Salarié : moyenne des bulletins.
      * Indépendant : revenu net annuel moyen / 12 (AVANT toute décote de
      * prudence, appliquée au scoring). Sert de base au ratio revenus/loyer.
+     * Salarié : CASH récurrent = net à payer moyen retraité des éléments non
+     * récurrents (bonus/avance) et des avantages en nature (non versés).
      */
     salaire_net_mensuel: number | null;
+    /** Salarié : moyenne du « net à payer » brut (avant retrait des non-récurrents), pour contexte. */
+    net_a_payer_moyen?: number | null;
+    /** Éléments retirés du salaire retenu (avance sur bonus, avantage voiture...), pour explication. */
+    exclusions?: string[];
     nbBulletins: number;
     intitule_poste: string | null;
     type_contrat: "CDI" | "CDD" | "interim" | "independant" | "autre" | null;
