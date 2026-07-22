@@ -695,6 +695,36 @@ l'étape « choix de langue » s'ajoute en tête. Webhook + `discretionnaire.ts`
   masquer les vrais). `discretionnaire.ts` : matchers composition (`second co-tenant`, `Yes/No`),
   animaux (`pets`, `No`), durée (`expected rental duration`, `2 and 5` / `more than 5` / `long term`).
 
+### Retours Vincent (22/07/2026) — suivi 4 états, export sélectif persistant, salaire CASH récurrent
+
+Livré + déployé (prod).
+
+- **Statuts de suivi (remplacent le bouton Traité/Non traité)** : 4 pastilles **Contacté** (mauve),
+  **Visite** (bleu), **Dossier déposé** (vert), **KO** (rouge). Tant qu'aucun n'est choisi, les 4 boutons
+  gris s'affichent côte à côte ; un clic replie l'affichage sur le **seul** statut choisi (coloré) — les
+  dossiers traités s'alignent, plus lisibles. **Recliquer la pastille désélectionne tout** (retour aux 4
+  gris) pour re-choisir. Colonne `candidats.suivi` (migration one-shot depuis `traite`), PATCH `{suivi}`,
+  bascule optimiste. Pastilles calées sur la boîte de `.ds-pill` (même hauteur que le tag « Analysé »).
+- **Export PDF sélectif + persistant** : une case à cocher par candidat (toutes cochées par défaut),
+  l'export ne génère que les cochés. État **persisté** en base (`candidats.exclu_export`, PATCH
+  `{excluExport}`) — survit au refresh/retour. ⚠️ La case vit DANS `ds-row__main` : l'ajouter comme 3ᵉ
+  enfant direct de `.ds-row` (`justify-content:space-between`) recentrait le nom (bug corrigé).
+- **Salaire salarié = CASH RÉCURRENT, pas le « Net » gonflé (LE point important)** : un bulletin peut
+  gonfler la ligne « Net » avec des éléments qui ne sont pas du salaire récurrent versé. RETINA prenait
+  la ligne « Net » → surestimation. Cas réel **Lourenco** (Carrousel SA) : RETINA lisait **6 850 €** alors
+  que le cash récurrent réel est **~4 111 €** (+50 % → faux positif, score 95). Deux distorsions :
+  1. **Avance sur bonus 2 500 €/mois** dans le brut = avance remboursable, **pas du salaire**.
+  2. **Avantage en nature voiture 945 €** ajouté au brut pour être taxé puis **retenu** (jamais viré) ;
+     RETINA prenait « Net » (6 824) au lieu de « **A payer** » (5 855, le vrai virement).
+  - **Extraction enrichie** (`SCHEMA_PAIE` + prompt) : `net_a_payer` (le virement réel), `avantage_en_nature`,
+    `elements_non_recurrents` (+ détail). Règle Vincent : **on retient le CASH** ; on exclut bonus/avance
+    (pas stable) ET tout le non-cash (avantage nature, allocations/frais).
+  - **Synthèse** (`recurCash`) : salaire retenu = `net_a_payer` **au prorata de la part récurrente du
+    brut de cash** = `net_a_payer × (brut − avantage − non_récurrents)/(brut − avantage)`. Repli prudent
+    (soustraction directe) si brut illisible. Note « à vérifier » + `net_a_payer_moyen`/`exclusions`.
+  - **Rétrocompatible** : sans les nouveaux champs (anciennes extractions), on retombe sur l'ancien calcul
+    → **les dossiers existants doivent être ré-analysés** (`force:true`) pour bénéficier de la correction.
+
 **Reste à faire / SPRINT 2 (ouvert par Vincent le 03/07/2026)** :
 1. **Employeur dominant** (constat dossier LANG-STREE) : afficher l'employeur le plus fréquent des
    bulletins (et signaler « plusieurs employeurs ») au lieu du premier trouvé. Cosmétique, sûr.
