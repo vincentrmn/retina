@@ -45,12 +45,24 @@ export async function analyseCandidat(id: number, force = false): Promise<Result
 
   // Extraction séquentielle par paquets de 2 : garde la latence raisonnable
   // sans taper les rate limits.
-  const docs = pending.rows as { id: number; type: DocType | "auto" | "autre"; mime: string; content: Buffer }[];
+  const docs = pending.rows as {
+    id: number;
+    type: DocType | "auto" | "autre" | "dossier";
+    mime: string;
+    content: Buffer;
+  }[];
+  // Types « legacy » rattachés à la main (un fichier = un type) : passent par
+  // l'extraction TYPÉE. Tout le reste — 'auto' (pas encore extrait), 'autre'
+  // (rien d'exploitable) ET 'dossier' (fichier multi-documents déjà extrait en
+  // batch) — passe par l'extraction batch. En particulier un 'dossier' réextrait
+  // (force) doit repasser par le batch : `extractDocument('dossier')` chercherait
+  // un schéma/prompt inexistant et enverrait un prompt vide (400 API).
+  const TYPES_LEGACY: readonly string[] = ["fiche_paie", "contrat", "piece_identite"];
   for (let i = 0; i < docs.length; i += 2) {
     await Promise.all(
       docs.slice(i, i + 2).map(async (d) => {
         try {
-          if (d.type === "auto" || d.type === "autre") {
+          if (!TYPES_LEGACY.includes(d.type)) {
             // Batch : le modèle détermine le type du document.
             const { type, extraction } = await extractDocumentAuto(d.mime, d.content);
             if (type === "autre" || !extraction) {
@@ -65,7 +77,7 @@ export async function analyseCandidat(id: number, force = false): Promise<Result
               );
             }
           } else {
-            const extraction = await extractDocument(d.type, d.mime, d.content);
+            const extraction = await extractDocument(d.type as DocType, d.mime, d.content);
             await pool.query(
               `UPDATE documents SET extraction = $1, extraction_status = 'done', extraction_error = NULL WHERE id = $2`,
               [JSON.stringify(extraction), d.id]
