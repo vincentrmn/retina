@@ -111,7 +111,9 @@ function suiviPillStyle(actif: boolean, s: (typeof SUIVIS)[number]): CSSProperti
     padding: "3px 10px",
     whiteSpace: "nowrap",
     borderRadius: "var(--ds-r-pill)",
-    border: `1px solid ${actif ? s.border : "var(--ds-line-2, var(--ds-line))"}`,
+    // Pastille choisie (colorée) : sans liseret, comme le tag « Analysé » (fond
+    // plein seul). Bordure transparente conservée pour garder la même taille.
+    border: `1px solid ${actif ? "transparent" : "var(--ds-line-2, var(--ds-line))"}`,
     background: actif ? s.bg : "transparent",
     color: actif ? s.fg : "var(--ds-ink-soft)",
   };
