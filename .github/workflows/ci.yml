@@ -1,0 +1,26 @@
+# Modele de CI GitHub Actions pour un projet korr : a copier dans
+# .github/workflows/ci.yml. Lance `npm run check` (typecheck, lint, tests,
+# build) sur chaque PR et sur main. Aucun secret : check ne touche ni la base
+# ni l'hebergeur. Les tests de bout en bout (Postgres + navigateur) restent
+# dans le bac a sable de Claude (npm run e2e).
+name: check
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # RETINA ne suit pas package-lock.json (genere au build Railway) : npm install.
+      - run: npm install --no-audit --no-fund
+      - run: npm run check
+        env:
+          # Le build Next prerend les pages sans base : les routes DB sont en
+          # force-dynamic, donc aucune connexion n'est ouverte au build.
+          NODE_ENV: production

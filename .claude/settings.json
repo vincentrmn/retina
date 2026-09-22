@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "bash .claude/hooks/session-start.sh" }] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [
+        { "type": "command", "command": "bash .claude/hooks/garde-commit.sh", "timeout": 600 },
+        { "type": "command", "command": "bash .claude/hooks/garde-push.sh" }
+      ] },
+      { "matcher": "Edit|Write", "hooks": [
+        { "type": "command", "command": "bash .claude/hooks/garde-fichiers.sh" }
+      ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|Write", "hooks": [
+        { "type": "command", "command": "bash .claude/hooks/typecheck-apres-edit.sh", "timeout": 120 }
+      ] }
+    ]
+  }
+}
