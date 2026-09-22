@@ -1,784 +1,113 @@
-# RETINA — Analyse de candidats à la location (BBI)
+# CLAUDE.md : RETINA
 
-> **R**ental **E**ligibility & **T**enant **I**ncome **N**et **A**nalysis
-> Troisième outil de la suite BBI, aux côtés de SCOUT et VESPER.
+Lu au début de chaque session. **Tenu sous 200 lignes** : ici les règles de tous
+les jours et la carte de la mémoire. Le récit des sessions est dans
+`docs/journal/`, les leçons par zone de code dans `.claude/rules/`, les
+références dans `.claude/skills/`.
 
-## Objectif produit
+## 1. Le projet en dix lignes
 
-Shawna encode un **bien à la location** (adresse, montant du loyer, charges, critères
-financiers d'éligibilité). Pour chaque bien, elle ajoute des **candidats à analyser**
-(généralement un couple). À l'ajout d'un candidat, elle uploade les documents du dossier :
+**R**ental **E**ligibility & **T**enant **I**ncome **N**et **A**nalysis : troisième outil BBI,
+à côté de SCOUT et VESPER. Utilisatrice : Shawna (BBI, location).
+- Un **bien à louer** (loyer, charges, critères d'éligibilité paramétrables), importé d'Apimo ou encodé.
+- Des **candidats** par bien (souvent un couple), arrivés par le formulaire Tally ou créés à la main.
+- Leurs documents (fiches de paie, contrats, pièces d'identité ; avis d'imposition, bilans, KBIS
+  pour un indépendant), souvent des scans médiocres, parfois un seul gros scan « tout dedans ».
+- Sortie : une **fiche signalétique** par candidat (A/B), des contrôles de cohérence, un **score /100**
+  déterministe, une **recommandabilité** (préférences du bailleur), un **export PDF** par bien.
+- **En prod** : https://retina-production-6d72.up.railway.app (ouverte, sans auth : ne jamais diffuser ce
+  domaine aux candidats). Ce qui vient : `docs/feuille-de-route.md`.
 
-- fiches de paie (idéalement les 3 dernières par personne),
-- contrats de travail,
-- pièces d'identité.
+## 2. Stack et commandes
 
-Le moteur analyse ces documents — **souvent des scans de qualité variable** — et en
-extrait des informations **déterministes** pour chaque membre du couple (A et B) :
+- Next.js 14.2 App Router sous `src/`, TypeScript, CSS maison (`globals.css` copié de VESPER),
+  Postgres via `pg` + `ensureSchema()` idempotent, `@anthropic-ai/sdk` (≥ 0.110), jsPDF client-side.
+- Hébergement Railway, déploiement automatique de `main`.
+- `npm run check` : typecheck, lint, tests (`tests/**/*.test.ts`, vitest), build. DOIT passer avant tout
+  commit (le portique le refuse sinon).
+- `package-lock.json` n'est pas suivi (généré au build Railway) : la CI fait `npm install`.
+- Local : Postgres 16 dans le bac à sable, `DATABASE_URL` en variable d'environnement.
+- Arrêter le serveur local : `pkill -f '[n]ext-server'` (un `pkill -f "next start"` tue le shell lui-même).
 
-| Champ extrait | Exemple |
+## 3. Règles absolues
+
+- **L'IA lit, le code juge.** Le modèle ne fait que de l'extraction en structured outputs
+  (`output_config.format` json_schema) ; score, synthèse et cohérence sont du code pur. Même dossier,
+  même score.
+- Un champ illisible reste `null` avec sa confiance, affiché « à vérifier » : jamais inventé.
+- Aucun montant converti d'une devise à l'autre : un document hors euros est écarté et signalé.
+- Salaire d'un salarié = **cash récurrent** (net à payer, hors bonus/avance et avantages en nature).
+- L'UI copie SCOUT/VESPER à l'identique : en cas de doute visuel, lire leur code, ne pas inventer.
+- Zéro tiret cadratin dans l'UI (chaînes de code et textes du modèle).
+- Critères d'un bien : toujours via `normalizeCriteres()` (lecture, persistance, scoring).
+- Données de candidats = données sensibles (RGPD) : jamais de document réel ni d'extraction réelle
+  dans le dépôt, les tests ou les captures commitées.
+- Clé Anthropic côté serveur uniquement (`ANTHROPIC_API_KEY`), jamais côté front.
+- Aucun secret dans le code, les commits, les docs ou ce fichier.
+- Aucun identifiant de modèle dans les commits, PR, code ou commentaires.
+- **Vérifier les rendus, ne pas deviner** : capture Playwright sur le vrai `globals.css` (1440 et 390 px)
+  pour l'UI, génération puis rastérisation pour le PDF.
+
+## 4. Architecture, en bref
+
+```
+Bien ─┬─ criteres (JSONB, normalizeCriteres)        Apimo ──sync──▶ biens
+      └─ candidats ─┬─ synthese / coherence / score (JSONB, calculés en code)
+                    ├─ tally_answers (JSONB)         Tally ──webhook──▶ candidat + documents
+                    └─ documents (BYTEA + extraction JSONB brute, pour audit)
+```
+
+- **Extraction** (`src/lib/extract.ts`, `schemas.ts`) : un fichier = Haiku détecte les types présents,
+  puis un appel Opus par type présent, en parallèle, avec un schéma « tableau ». Stocké `type='dossier'`.
+- **Analyse** (`src/lib/analyse.ts`) : partagée par le bouton Analyser et le webhook Tally, lancée en
+  arrière-plan (statut `analyse_en_cours`, les pages pollent).
+- **Synthèse** (`src/lib/synthese.ts`) : aplatit les documents en items, les regroupe par nom (A/B),
+  profil salarié ou indépendant, 4+ contrôles de cohérence, complétude.
+- **Scoring** (`src/lib/scoring.ts`) : 40 ratio, 30 stabilité, 15 ancienneté, 15 cohérence ; un critère
+  éliminatoire plafonne à 40. **Recommandabilité** (`discretionnaire.ts`) : % séparé, depuis Tally.
+- **Export** (`src/lib/exportBien.ts`) : PDF client-side, candidats cochés seulement.
+- **Mail de relance** (`src/lib/mail.ts`) : Gmail SMTP BBI, 503 propre si non configuré.
+- Détail produit, modèle de données, barème : `docs/contexte/produit-et-architecture.md`.
+
+## 5. Infra
+
+Railway, projet `charming-vibrancy`, services `retina` (auto-deploy de `main`) et `Postgres`. Pilotage
+en GraphQL direct avec un token workspace que Vincent fournit à la demande (jamais stocké). Tout le
+détail (IDs, variables, accès aux données de prod) : skill `railway`.
+
+## 6. Conventions de travail avec Vincent (strictes)
+
+- Vincent ne tape aucune commande ; il travaille depuis claude.ai/code.
+- Français concis, décisions tranchées, seulement les questions bloquantes.
+  Proposition validée avant de coder les gros morceaux.
+- Branche de session, PR squash-merge vers `main` (jamais de push direct sur `main`), puis attendre le
+  déploiement Railway en `SUCCESS` et vérifier la prod avant de rendre la main.
+- Barème et critères : les valeurs par défaut se valident avec Shawna, pas en session.
+- En fin de session : entrée de journal ; leçon durable dans la règle du
+  chemin ; décision dans `docs/decisions.md`. Ce fichier ne grandit pas.
+- Procédures : `/cadrer`, `/construire`, `/livrer`, `/journal`, `/staging`, `/installer`.
+
+## 7. Carte de la mémoire
+
+| Où | Quoi |
 |---|---|
-| Salaire mensuel net | 2 260 € (moyenne des 3 derniers bulletins) |
-| Intitulé du poste | Infirmière |
-| Type de contrat | CDI / CDD / intérim / indépendant |
-| Période d'essai | Oui/non + date de fin |
-| Date d'entrée dans l'entreprise | 2021-03-01 |
-| Nom de l'entreprise | CHU de Liège |
-| Identité (nom, prénom, date de naissance) | depuis la pièce d'identité |
-
-Il en sort une **fiche signalétique par candidat** avec un **score d'éligibilité**,
-et Shawna peut **exporter l'analyse par bien** : récap du bien + analyse de tous
-les candidats, pour comparaison et archivage.
-
-## Contrainte design — NON NÉGOCIABLE
-
-RETINA doit utiliser **EXACTEMENT le même design/UI que SCOUT et VESPER** : même
-stack front, mêmes composants, mêmes couleurs, même typographie, même layout, même
-navigation. Avant d'écrire la moindre ligne d'UI :
-
-1. Demander l'accès aux repos SCOUT et VESPER (via `add_repo`) — l'accès sera
-   donné dans une prochaine session.
-2. En extraire le design system : stack (framework, CSS), palette, composants
-   partagés, structure des pages, conventions de nommage.
-3. Répliquer à l'identique. En cas de doute sur un choix visuel, copier ce que
-   font SCOUT/VESPER plutôt qu'inventer.
-
-## Architecture
-
-### Vue d'ensemble
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│  Front (même stack/design que SCOUT & VESPER)                │
-│  Biens → Candidats → Upload docs → Fiche signalétique → Export │
-└───────────────┬──────────────────────────────────────────────┘
-                │
-┌───────────────▼──────────────────────────────────────────────┐
-│  Backend RETINA                                              │
-│  ┌─────────────────┐   ┌──────────────────┐   ┌───────────┐  │
-│  │ 1. EXTRACTION   │ → │ 2. SCORING       │ → │ 3. EXPORT │  │
-│  │ Claude API      │   │ Code déterministe│   │ PDF       │  │
-│  │ (vision + JSON) │   │ (zéro IA)        │   │           │  │
-│  └─────────────────┘   └──────────────────┘   └───────────┘  │
-└──────────────────────────────────────────────────────────────┘
-```
-
-**Principe cardinal : l'IA lit, le code juge.** Le modèle ne fait que de
-l'extraction structurée ; le score est calculé par du code classique à partir des
-champs extraits et des critères du bien. Même dossier ⇒ même score, toujours, et
-chaque point du score est explicable.
-
-### Modèle de données
-
-```
-Bien
-├── adresse
-├── loyer (€/mois)
-├── charges (€/mois)
-├── criteres_eligibilite        # paramétrables par bien
-│   ├── ratio_revenus_min       # ex: revenus nets ≥ 3 × (loyer + charges)
-│   ├── cdi_requis / cdd_accepte
-│   ├── periode_essai           # éliminatoire ou pénalisante
-│   └── anciennete_min          # optionnel
-└── candidats[]
-
-Candidat (= un dossier, généralement un couple)
-├── personnes[]                 # A et B (ou une seule personne)
-│   ├── identite                # extraite de la pièce d'identité
-│   └── emploi                  # extrait paie + contrat
-│       ├── salaire_net_mensuel (moyenne des bulletins fournis)
-│       ├── intitule_poste
-│       ├── type_contrat        # CDI / CDD / intérim / autre
-│       ├── periode_essai       # bool + date de fin
-│       ├── date_entree
-│       └── employeur
-├── documents[]                 # fichiers uploadés (PDF/images, souvent scans)
-│   ├── type                    # fiche_paie / contrat / piece_identite
-│   ├── personne                # A ou B
-│   └── extraction              # JSON brut retourné par le modèle + confiance
-├── coherence[]                 # contrôles croisés (voir plus bas)
-├── score                       # calculé, avec détail par critère
-└── statut                      # en_attente / analysé / erreur_document
-```
-
-### Étage 1 — Extraction (Claude API)
-
-- **Modèle : `claude-opus-4-8`** (Claude Opus 4.8). Choisi pour sa vision haute
-  résolution (jusqu'à 2576 px de grand côté) : décisif sur des scans médiocres,
-  bulletins photographiés au téléphone, documents de travers. Pas d'OCR séparé
-  (Tesseract & co) — les PDF/images passent directement à l'API en base64.
-  - Alternative volume : `claude-sonnet-5` (~2× moins cher). Démarrer sur Opus,
-    mesurer la qualité sur de vrais dossiers, descendre si ça tient.
-- **Structured outputs obligatoires** : chaque appel utilise
-  `output_config: {format: {type: "json_schema", schema: ...}}` avec un schéma
-  strict par type de document (fiche de paie, contrat, pièce d'identité).
-  La réponse est garantie valide et parseable — jamais de texte libre.
-- **Un appel par document** (pas un appel géant par dossier) : meilleure
-  traçabilité, retry unitaire, coût maîtrisé, et le JSON extrait est stocké
-  tel quel à côté du fichier pour audit.
-- **Champ de confiance** : le schéma inclut pour chaque champ un niveau de
-  confiance + un flag `illisible`. Un champ douteux est affiché comme "à
-  vérifier" dans la fiche, jamais inventé.
-- **Contrôles de cohérence croisés** (calculés en code après extraction) :
-  - nom sur la fiche de paie == nom sur la pièce d'identité,
-  - employeur du contrat == employeur du bulletin,
-  - salaire du contrat ≈ salaire des bulletins,
-  - bulletins consécutifs et récents (< 3 mois).
-  Toute incohérence est signalée sur la fiche (utile aussi contre les faux documents).
-
-### Étage 2 — Scoring (code pur, déterministe)
-
-Calculé à partir des champs extraits et des `criteres_eligibilite` du bien.
-Barème indicatif (à valider avec Shawna, paramétrable par bien) :
-
-| Critère | Poids indicatif |
-|---|---|
-| Ratio revenus nets du ménage / (loyer + charges) | 40 pts (palier : ≥3× = max) |
-| Stabilité contrat (CDI hors essai > CDI en essai > CDD > intérim) | 30 pts |
-| Ancienneté dans l'entreprise | 15 pts |
-| Cohérence du dossier (contrôles croisés OK) | 15 pts |
-| **Total** | **100 pts** |
-
-Sortie : score global + détail par critère avec la valeur mesurée et le seuil
-("revenus 4 520 € = 3,4× le loyer → 40/40"). Un critère marqué *éliminatoire*
-dans le bien plafonne le score et l'affiche en rouge, quel que soit le reste.
-
-### Étage 3 — Fiche signalétique & export
-
-- **Fiche signalétique par candidat** : identités A/B, tableau des champs
-  extraits, contrôles de cohérence, score détaillé, liens vers les documents
-  sources. Champs douteux surlignés.
-- **Export par bien** (PDF) : page récap du bien (adresse, loyer, charges,
-  critères) + classement des candidats par score + une fiche par candidat.
-  Génération serveur par templating (même rendu que l'UI).
-
-## Coûts (ordre de grandeur, mesuré à affiner)
-
-Dossier couple typique : 6 fiches de paie + 2 contrats (5–10 pages) + 2 pièces
-d'identité ≈ 15–25 pages scannées ≈ 1 500–3 000 tokens/page en entrée, sortie
-JSON faible.
-
-| Modèle | Tarif in/out par M tokens | Coût par dossier candidat |
-|---|---|---|
-| Opus 4.8 | 5 $ / 25 $ | ~0,30–0,60 $ |
-| Sonnet 5 | 3 $ / 15 $ (intro 2 $/10 $) | ~0,10–0,30 $ |
-
-À 100 candidats/mois : < 50 €/mois d'API. Plafonner la résolution des scans
-uploadés (côté serveur) pour contrôler le coût token des images.
-
-## Décisions techniques à trancher en session de build
-
-1. **Stack** : celle de SCOUT/VESPER, découverte à l'ouverture de leurs repos.
-   Ne rien choisir avant de les avoir lus.
-2. **Barème de scoring** : valider les poids et les critères éliminatoires avec
-   Shawna (ratio exact, CDD acceptés ou non, essai éliminatoire ?).
-3. **Stockage des documents** : suivre ce que font SCOUT/VESPER (fs local, S3,
-   DB). Attention RGPD : pièces d'identité et bulletins = données sensibles ⇒
-   rétention limitée, accès restreint, suppression du dossier candidat possible.
-4. **Clé API Anthropic** : variable d'environnement `ANTHROPIC_API_KEY` côté
-   serveur uniquement, jamais côté front.
-
-## Plan de build (prochaines sessions)
-
-1. Ajouter les repos SCOUT et VESPER à la session (`add_repo`) → extraire le
-   design system et la stack.
-2. Scaffolding RETINA sur cette stack : CRUD Biens + Candidats + upload docs.
-3. Moteur d'extraction (schémas JSON par type de document, appels Claude,
-   stockage des extractions, contrôles de cohérence).
-4. Scoring paramétrable + fiche signalétique.
-5. Export PDF par bien.
-6. Calibration sur 2–3 dossiers réels anonymisés avant mise en main de Shawna.
-
-## État d'implémentation (03/07/2026)
-
-**Scaffold complet livré et buildable** (`npm run build` passe). Stack répliquée de VESPER
-(le plus récent des deux) : Next.js 14.2 App Router sous `src/`, CSS maison — `globals.css`
-copié tel quel de Vesper (tokens + primitives `.ds-*` « BBI tools », topbar/brand identiques,
-logo Brouwers) —, Postgres via `pg` + `ensureSchema()` idempotent, mêmes conventions
-(`force-dynamic` sur toute route GET qui touche la DB, try-catch + JSON d'erreur partout).
-
-- **Schéma** (`src/lib/db.ts`) : `biens` (adresse, loyer, charges, `criteres` JSONB) →
-  `candidats` (nom, statut, `synthese`/`coherence`/`score` JSONB) → `documents`
-  (personne A/B, type, fichier en **BYTEA** + `extraction` JSONB brute pour audit).
-  Stockage des documents en base (le fs Railway est éphémère) ; DELETE candidat = CASCADE
-  documents (RGPD).
-- **Extraction** (`src/lib/extract.ts` + `schemas.ts`) : SDK `@anthropic-ai/sdk`,
-  `claude-opus-4-8`, un appel par document, **structured outputs**
-  (`output_config.format` json_schema) — chaque champ = `{value, confiance}`, `value:null`
-  si illisible, jamais inventé. PDF → bloc `document` base64, images → bloc `image`.
-  Adaptive thinking activé (scans sales). ⚠️ SDK ≥ 0.110 requis (`"adaptive"` inconnu des vieux types).
-- **Synthèse + cohérence** (`src/lib/synthese.ts`, code pur) : agrégation par personne
-  (salaire net = moyenne des bulletins, ancienneté, essai…) + 4 contrôles croisés
-  (nom paie↔identité, employeur contrat↔paie, salaire contrat↔paie ±15 %, bulletins
-  consécutifs et < 3 mois).
-- **Scoring** (`src/lib/scoring.ts`, code pur) : 40 ratio (palier ≥ ratioMin) + 30 stabilité
-  (CDI 30 / CDI en essai 22 / CDD 15 ou 8 selon `cddAccepte` / intérim 8, pondérée par
-  salaire) + 15 ancienneté + 15 cohérence (−5 par incohérence). Éliminatoires paramétrables
-  par bien (`ratioEliminatoire`, `cdiRequis`, `essaiEliminatoire` si tout le ménage est en
-  essai) → **score plafonné à 40/100** + affiché en rouge. Testé sur dossier fictif
-  (couple, incohérence de nom détectée, cap éliminatoire vérifié).
-- **Pages** : `/` (biens), `/biens/new` + `/biens/[id]/edit` (formulaire commun
-  `BienForm`), `/biens/[id]` (KPI + candidats classés par score), `/candidats/[id]`
-  (upload par personne/type, bouton Analyser avec spinner, fiche signalétique, cohérence,
-  score détaillé, champs douteux « à vérifier »).
-- **API** : `biens`, `biens/[id]`, `candidats`, `candidats/[id]`,
-  `candidats/[id]/analyze` (extrait les docs manquants → synthèse → score, `{force:true}`
-  pour tout ré-extraire), `documents` (upload multipart 15 Mo max, PDF/JPEG/PNG/WebP),
-  `documents/[id]/file` (sert le scan).
-
-### Session POC (03/07/2026) — testé sur documents réels
-
-- **Multi-bulletins** : un PDF scanné contient souvent plusieurs mois (cas réel « fiche de
-  salaire nico 04-05-06 ») → `SCHEMA_PAIE` retourne un **tableau `bulletins`**, la synthèse
-  aplatit. Ne pas revenir à un bulletin par document.
-- **Extraction validée sur vrais scans** (bulletins LUXFUEL, contrat CGI, passeport tunisien) :
-  montants exacts, nuances captées (CDI signé sans date de début — liée à l'autorisation de
-  travail —, essai 6 mois non calculable, nom d'épouse « HAMDI EP KARAA »). Les **`remarques`**
-  du modèle sont précieuses → affichées dans la carte Documents.
-- **Fix scoring** : la pondération par salaire ne s'applique que si TOUS les salaires sont
-  connus (sinon une personne sans bulletin avait un poids nul et son contrat disparaissait
-  du score) — moyenne simple à défaut.
-- **Responsive mobile vérifié** (Playwright 390 px, zéro overflow) : ajouts CSS `.ds-grid--cards`
-  (cartes A/B empilées) et `.upload-file` en fin de `globals.css`, section « RETINA — ajouts ».
-- Flux complet testé end-to-end en local (Postgres 16 local) : bien → candidat → upload 3
-  vrais PDF → analyse 19 s → score 55/100 cohérent (bulletins 2024 signalés trop vieux).
-
-### Retours Vincent (03/07/2026 soir) — upload batch + polish, livré
-
-- **Upload en batch (feature clé)** : une seule dropzone, tous les documents en vrac, sans
-  choisir type ni personne. Pipeline en 2 temps : **classification Haiku**
-  (`claude-haiku-4-5`, `SCHEMA_CLASSIFICATION` minuscule) puis extraction typée Opus.
-  ⚠️ Un schéma unique type+extraction dépasse la limite API de 16 paramètres à union
-  (l'erreur 400 le dit explicitement) : ne PAS re-fusionner les deux étapes.
-- **Rattachement automatique A/B** (`assignPersonnes`, code pur) : regroupement des docs par
-  nom extrait (`sameEntity`), les docs déjà rattachés ancrent leur groupe, badge A/B cliquable
-  pour corriger à la main (PATCH `/api/documents`). `documents.personne = '?'` tant que non
-  rattaché, `documents.type = 'auto'|'autre'` possibles.
-- **Complétude** (`buildCompletude`) : par personne, pièce d'identité / contrat / 3 bulletins
-  récents, affichée en carte « Le dossier est-il complet ? » (ok/partiel/manquant).
-- **Zéro tiret cadratin** dans l'UI (exigence Vincent) : chaînes de code nettoyées, remarques
-  du modèle sanitisées (`sansCadratin` dans extract.ts) + consigne dans les prompts.
-- **Typo/responsive** : KPI `.ds-stat` empilés (libellé au-dessus, valeur en `--ds-fs-lg` au
-  lieu de xl), boutons sans débordement (wrap sur mobile), section « RETINA — ajouts » de
-  `globals.css`.
-
-**Déploiement Railway — FAIT (03/07/2026), testé end-to-end en prod** :
-- **URL : https://retina-production-6d72.up.railway.app** (un 2ᵉ domaine `retina-production-9985`
-  existe aussi, généré en double — sans conséquence). Analyse d'un dossier réel en prod : 21 s,
-  score identique au local.
-- Projet `charming-vibrancy` (`de11fb07-1f08-4e60-b5f5-c57a855a5399`), env `production`
-  (`28421880-…`), services `retina` (`f35c7920-…`, repo GitHub branche `main`, auto-deploy)
-  et `Postgres` (`1d39e419-…`).
-- Variables posées sur `retina` : `DATABASE_URL = ${{Postgres.DATABASE_URL}}`,
-  `ANTHROPIC_API_KEY` (clé dédiée au projet, doc « Clé API » du Drive), `PGSSL = require`.
-- Pilotage Railway depuis Claude **en GraphQL direct** (`backboard.railway.com`,
-  `Authorization: Bearer <workspace token>`) — même méthode que Vesper ; la CLI/MCP
-  rejettent ce token. Le token n'est PAS stocké : le redemander à Vincent au besoin.
-
-### Retours Vincent (03/07/2026 nuit) — polish + export PDF, livré
-
-- **Export PDF par bien** (`src/lib/exportBien.ts`, client-side jsPDF + autotable, logo Brouwers
-  rasterisé du SVG comme Vesper) : page de garde (récap bien + KPI + critères en bullets) +
-  classement des candidats + une fiche par candidat (score détaillé, synthèse A/B, cohérence).
-  Bouton « Exporter en PDF » sur la page bien (récupère la fiche complète de chaque candidat).
-  ⚠️ Police Helvetica de jsPDF = WinAnsi : pas de `≥ × ≈ —`. Fonction `S()` les remplace
-  (`min.`, `x`, `~`, `-`). Le `€` passe.
-- **Recalcul des scores à l'édition du bien** (`PATCH /api/biens/[id]`) : si loyer/charges/critères
-  changent, on recalcule le score de chaque candidat depuis sa `synthese`/`coherence` déjà stockées
-  (aucune ré-extraction, **zéro coût API**). Retourne `{rescored}`.
-- **Comptage « analysés »** : compté sur `score IS NOT NULL` (et non `statut='analyse'`), sinon un
-  candidat en `erreur_document` mais avec un score partiel n'était pas compté (bug remonté par Vincent).
-- **Coût API mesuré** (`count_tokens` sur les vrais docs) : ~0,36 $/dossier, conforme à l'estimation.
-  Le driver = tokens d'entrée des scans haute résolution (passeport = 25k tokens, pages de visa
-  vierges incluses), PAS le thinking (mesuré : qualité identique avec/sans, coût quasi identique).
-  Levier futur : plafonner la résolution (pas de `sharp` dispo, à faire proprement).
-- **Bug scoring corrigé** : `Personne ${p}` au lieu de `${p.personne}` produisait `[object Object]`.
-- **Français plus soigné** partout (détails de score en vraies phrases), plus de `×`/`≥` dans les
-  chaînes UI (formulations « fois », « au minimum »).
-- **UI** : carte d'intro Retina sur l'accueil (3 étapes) ; critères du bien en **vrais bullets**
-  (hors KPI) ; **scores colorés** dans la liste candidats (rouge si éliminatoire/faible, vert si
-  solide, ambre entre les deux) ; **notes du score alignées** en colonne fixe (`.score-row`) ;
-  **fiche synthèse A/B à lignes constantes** (tiret si absent) ; **carte ratio en rouge léger** si
-  revenus insuffisants ; **champs en fond blanc** (un champ gris paraissait désactivé) ; **badge
-  A/B des documents** clairement cliquable (`.doc-person`) + hint expliquant la détection auto ;
-  explication de la méthode + paliers dans le formulaire du bien.
-- **Favicon** : `src/app/icon.svg`, motif d'œil (rétine) dans le vert BBI.
-
-### Retours Vincent (03/07/2026, session fiabilisation UI + export PDF)
-
-Gros lot de polish + corrections, tout livré et déployé (prod testée à chaque fois).
-
-- **Export PDF fiabilisé (le morceau clé)** : le PDF sortait des lignes cassées / caractères
-  parasites (`!`, espacement des lettres déréglé). **Cause racine trouvée en générant puis en
-  RASTERISANT le PDF** (jsPDF en Node + `pdf.js`, cf. §Méthode de test) : la police Helvetica de
-  jsPDF n'encode que **WinAnsi (CP1252)**. Détail complet dans les Pièges ci-dessous. `S()` dans
-  `exportBien.ts` réécrit → ne laisse QUE du WinAnsi atteindre le PDF, appliqué globalement via un
-  **override de `doc.text`** (couvre aussi les cellules autotable) + sur les champs libres des
-  tableaux (mesure de largeur). Plus d'espace autour des `/`.
-- **Incohérences validables à la main** : bouton « Marquer OK » sur chaque incohérence →
-  `CoherenceCheck.ignored`, le scoring ne pénalise plus (`!c.ok && !c.ignored`), recalcul depuis la
-  synthèse stockée (`PATCH /api/candidats/[id]` avec `ignoreCoherence`, **zéro coût API**). Le PDF
-  affiche alors « OK » vert + « validé à la main », plus le rouge.
-- **Contrôles de cohérence réécrits en français clair** (phrases complètes, fini le style
-  télégraphique `Contrat : « X » / bulletins : « Y »`).
-- **Nom de repli** (`buildSynthese`) : sans pièce d'identité, on prend le nom porté par le contrat
-  ou les fiches de paie (marqué « à vérifier »), au lieu de n'afficher aucun nom.
-- **Critères d'éligibilité repensés** (`BienForm`) : chaque critère a un **interrupteur « activer »**
-  + une **puce « Éliminatoire »** (toggle rouge). Nouveaux champs `Criteres` (`ratioActif`,
-  `cdiActif`/`cdiEliminatoire`, `essaiActif`, `ancienneteActif`) + **`normalizeCriteres()`** pour la
-  compat ascendante des biens existants (ancien `cdiRequis` = actif+éliminatoire, etc.). Un critère
-  désactivé = grisé, ignoré au calcul (ratio désactivé ⇒ 40/40, pas d'exigence de revenus).
-  `normalizeCriteres` appliqué à la persistance (POST/PATCH biens) et au scoring.
-- **« Comment le score est-il calculé ? »** en **tableau à hauteur de ligne constante** (Critère /
-  Points / Comment) au lieu d'une liste à puces.
-- **Topbar** : grille `auto 1fr auto` (au lieu de `1fr auto 1fr` qui écrasait la colonne des boutons
-  et les cassait en escalier) → les boutons tiennent sur une ligne, le titre tronque proprement.
-- **Divers** : RETINA en majuscule partout (dont `<title>`) ; suppression du paragraphe « Le
-  principe » de l'accueil ; carte de cohérence et carte de complétude passées en layout `.score-row`
-  empilé (libellé au-dessus, phrase dessous) — plus de tassement sur mobile ; puces `.ds-bullets`
-  centrées sur la 1ʳᵉ ligne via `calc(0.75em - 3.5px)`.
-
-### Retours Shawna (03/07/2026) — premiers retours utilisateur, livrés + déployés
-
-- **Titre trop long qui chevauchait la marque** (`.page-title`) : cause = `justify-self:center`
-  dimensionnait le titre à son contenu, donc `overflow:hidden` ne coupait rien. Passage en
-  `justify-self:stretch` + rognage sur 2 lignes (`-webkit-line-clamp`). Le nom long passe sur une 2ᵉ
-  ligne, plus de chevauchement.
-- **Fiche candidat trop bavarde** : suppression de l'affichage des `remarques` libres du modèle
-  (numéros de passeport, fautes, matériel reçu, mentions manuscrites…) — du bruit pour Shawna. Elles
-  restent dans l'extraction stockée (audit), juste plus affichées.
-- **Un seul gros scan « tout dedans » (LE gros point)** : avant, chaque fichier était classé en UN
-  type et extrait comme tel → un scan mélangeant contrat + fiches de paie + pièce d'identité perdait
-  tout sauf un type. Refonte de l'extraction batch :
-  - `extract.ts` → **extraction dossier** : Haiku détecte les **types présents** (`SCHEMA_TYPES_PRESENTS`,
-    3 booléens), puis Opus extrait **en parallèle** chaque type présent avec son schéma **« tableau »**
-    (`SCHEMA_CONTRATS`, `SCHEMA_IDENTITES` — un par appel, réutilise le pattern éprouvé des bulletins ;
-    ⚠️ **ne pas** fabriquer un schéma géant unique, ça retombe sur la limite des unions). Stocké
-    `type='dossier'` avec `fiches_de_paie[]/contrats[]/pieces_identite[]`.
-  - `synthese.ts` → **`partitionByPerson`** : on aplatit tous les documents extraits en « items »
-    (paie/contrat/identité, chacun avec son nom) puis on regroupe **par nom** (sameEntity). Gère
-    « un scan par personne » (un seul nom) ET « un scan pour tout le couple » (items répartis sur 2
-    noms). Les documents typés legacy forcés A/B à la main restent honorés. `assignPersonnes` (ancien
-    rattachement par fichier) supprimé.
-  - UI : un fichier dossier affiche son contenu (« Dossier · 3 fiches de paie, 1 contrat, 1 pièce
-    d'identité »), plus de badge A/B par fichier.
-  - **Testé sur dossiers fictifs** (couple mélangé → A/B séparés, personne seule → 1 personne, legacy
-    forcé → inchangé, cohérence par personne OK). ⚠️ **Calibration sur vrais scans mixtes de Shawna =
-    étape suivante** (l'extraction Haiku+Opus n'est validée que sur des dossiers fabriqués).
-
-### Candidats INDÉPENDANTS (03/07/2026) — livré + déployé, barème par défaut à valider
-
-Nouveau profil, branché sur la même architecture (l'IA lit, le code juge) et sur l'extraction
-dossier multi-documents. **Barème = valeurs par défaut, à caler avec Shawna sur un vrai dossier.**
-
-- **Documents** : 3 nouveaux types (`avis_imposition`, `bilan`, `kbis`), chacun avec son schéma
-  « tableau » (plusieurs années/exercices, plusieurs personnes). Ajoutés à `SCHEMA_TYPES_PRESENTS`
-  (Haiku) et `SCHEMAS_MULTI`/`PROMPTS_MULTI` (Opus). `DossierType` = `DocType` + ces 3 types,
-  `DOSSIER_TYPES` boucle l'extraction. `ExtractionDossier` gagne `avis_imposition[]/bilans[]/kbis[]`.
-- **Synthèse** (`emploiIndependant`) : une personne SANS fiche de paie NI contrat mais AVEC des
-  documents d'activité → profil indépendant. Revenu mensuel = **revenu net annuel moyen des 2 derniers
-  exercices / 12** (avis d'imposition **prioritaire**, sinon `resultat_net` des bilans). Ancienneté =
-  âge de l'entreprise (KBIS `date_immatriculation`, sinon `date_creation` du bilan). ⚠️ Un **gérant qui
-  se verse un salaire** (fiches de paie présentes) reste traité en **salarié**. `SynthesePersonne.emploi`
-  gagne un sous-objet `independant` (revenus annuels retenus, moyenne, forme juridique, CA, source).
-- **Scoring** (`scoring.ts`, constantes en tête) : `DECOTE_INDEP = 0.2` → le revenu de l'indépendant
-  n'est retenu qu'à **80 %** pour le ratio (revenu moins régulier ; note explicite dans le détail :
-  « X retenus sur Y de revenu réel »). Stabilité : `ANCIENNETE_INDEP_MIN_MOIS = 24` → **18 pts** si
-  activité ≥ 2 ans, **8 pts** sinon. `revenusMenage` du score = revenu **retenu** (cohérent avec le ratio).
-- **Complétude** indépendant : pièce d'identité, avis d'imposition (×2), bilans, KBIS.
-- **UI** : fiche signalétique « indépendant » dédiée (statut, forme juridique, revenu mensuel + moyenne
-  annuelle + source, revenus annuels retenus, CA, entreprise, activité depuis) ; dropzone, export PDF et
-  explication du calcul dans le formulaire du bien à jour.
-- **Testé sur dossiers fictifs** : indépendant seul (avis 2 ans + bilan + KBIS) → revenu, décote,
-  ancienneté OK ; couple **salariée CDI + indépendant mélangés dans un seul scan** → séparation A/B par
-  le nom + revenu ménage retenu corrects. ⚠️ **Calibration sur un vrai dossier d'indépendant = étape
-  suivante** (l'extraction avis/bilan/KBIS n'est validée que sur des dossiers fabriqués).
-
-### Première calibration sur un VRAI dossier (03/07/2026) — Shawna, dossier « LANG-STREE »
-
-Premier test utilisateur du profil indépendant sur un vrai scan. Shawna a signalé « 15 bulletins
-alors que le document présente 12 salaires 2025 ». **Diagnostic (données réelles inspectées) : ce
-n'est PAS un bug.**
-
-- **Le « 15 » est correct** : la personne **Strée Florian** a eu **deux employeurs** en 2025 —
-  **Amplo Liège** (12 bulletins, janvier→décembre) + **NV ERGOFLEX** (3 bulletins : mars, sept, oct).
-  12 + 3 = 15. Le modèle a tout lu ; Shawna n'avait compté que l'employeur principal.
-- **Le couple a été correctement séparé** depuis le seul gros scan : **Strée Florian = salarié**
-  (15 bulletins, 2 employeurs), **Lang Jessie = indépendante** détectée via son **avis d'imposition
-  2024** (36 048 €/an → 3 004 €/mois). Donc la détection couple + le profil indépendant tiennent sur
-  du réel. 👍
-- **Deux vrais points relevés au passage → SPRINT 2** :
-  1. **Employeur affiché = le 1ᵉʳ bulletin trouvé** (`paies.map(...).find`) = « NV ERGOFLEX » (mineur,
-     3 mois) au lieu d'« Amplo Liège » (principal, 12 mois). Afficher l'employeur **dominant** (le plus
-     fréquent) et/ou signaler « 2 employeurs ». Cosmétique, sûr.
-  2. **Salarié SANS contrat de travail** → `type_contrat = null` → **0 pt de stabilité**, ce qui plombe
-     la note malgré un an de fiches de paie. Piste (à valider avec Shawna) : sans contrat, retenir une
-     stabilité « salarié, contrat non fourni » (~15/30) au lieu de 0, avec une note « contrat manquant ».
-- **Méthode — accès aux données de prod** : le port TCP Postgres (`hayabusa.proxy.rlwy.net:30422`) est
-  **injoignable** (egress limité au HTTPS via le proxy) → `psql` timeout. Contournement : l'app RETINA
-  est **ouverte (sans auth)**, donc on inspecte l'extraction stockée directement via l'**API prod**
-  (`GET /api/candidats/[id]` renvoie `documents[].extraction` complet). Réutilisable pour tout debug data.
-
-### Pièges durables (valables aussi pour SCOUT & VESPER — même stack, même `globals.css`, même jsPDF)
-
-1. **jsPDF + police standard = WinAnsi (CP1252) UNIQUEMENT.** Un caractère hors de ce jeu ne rate
-   pas qu'un glyphe : **il dérègle l'espacement de TOUTE la ligne**. Les textes produits par le
-   modèle (français) en contiennent, **invisibles dans le navigateur** donc jamais soupçonnés :
-   **espace fine insécable `U+202F`** et **espace fine `U+2009`** (avant `€ % : ;` et dans « 3 900 »),
-   **trait d'union insécable `U+2011`** (dates « 2026‑02 »), **flèches `→`** (rendue « !' »), `≥ ≈`.
-   ⇒ Tout texte qui part dans un PDF jsPDF doit passer par un assainisseur qui **ne laisse que du
-   WinAnsi** (garder accents, `« » € œ` ; remplacer espaces exotiques → espace, tirets → `-`,
-   flèches/maths → ASCII ; translittérer/retirer le reste). L'appliquer **globalement via un override
-   de `doc.text`** (sinon on en oublie, et autotable dessine ses cellules avec `doc.text` aussi).
-   Voir `S()` dans `exportBien.ts` — réutilisable tel quel.
-2. **Spécificité CSS : `globals.css` a une règle générique `input[type="number"] { width: 100% }`
-   (sélecteur d'attribut, 0,1,1) qui BAT une simple classe (0,1,0).** Un petit champ inline stylé par
-   une classe restait donc en pleine largeur (coupait la phrase, désalignait tout). ⇒ pour surcharger,
-   monter en spécificité (`input.crit-num`, 0,1,1, défini plus bas). Vaut pour tout champ qu'on veut
-   dimensionner autrement que par défaut.
-3. **Layout robuste = grille alignée**, pas des champs qui flottent dans un flex. Pour une rangée
-   « [contrôle] texte [contrôle] », utiliser `display:grid; grid-template-columns: auto 1fr auto;
-   align-items:center` → tout s'aligne quelle que soit la longueur du texte.
-4. **MCP Tally `create_blocks` abandonne silencieusement des champs de saisie « nus » créés en lot.**
-   Un lot contenant plusieurs `INPUT_DATE`/`INPUT_EMAIL`/`INPUT_PHONE_NUMBER`/`MULTIPLE_CHOICE_OPTION`
-   sans TITLE (label en placeholder) en perd une partie **sans erreur** (déterministe, reproduit en
-   insertion ET en append). Un champ nu créé SEUL passe. ⇒ créer ces champs **un par un** et **vérifier
-   le nombre créé** (`blockUuids.length` du retour) après chaque appel. Les questions TITLE + options
-   se créent en lot sans souci. Corollaire : **rien n'est live tant que `save_form` n'est pas appelé**
-   (le working draft est en mémoire) → on peut expérimenter sans risque pour le formulaire de prod, mais
-   **impossible de vérifier visuellement** le rendu (le proxy egress bloque `tally.so` dans Playwright) :
-   se fier au ledger (types, `## Page flow`, `## Logic rules`).
-
-### Méthode de test (à réutiliser partout)
-
-- **Ne jamais « deviner » un rendu visuel.** Rendre le vrai markup + le VRAI `globals.css` avec
-  Playwright/Chromium (desktop **et** 390 px), puis regarder la capture. ⚠️ **Ne pas reconstruire une
-  maquette CSS à la main** : elle peut « marcher » à tort en omettant la règle générique qui casse
-  tout en prod (leçon vécue avec le champ `input[type=number]`). Copier `globals.css` tel quel.
-- **PDF : le générer ET le rasteriser pour le VOIR.** jsPDF tourne aussi en Node (bundler `esbuild`,
-  stub du chargement du logo, capter `doc.save` via `output('arraybuffer')`), puis rendre les pages
-  avec `pdfjs-dist` dans Chromium et screenshoter. C'est ce qui a permis d'isoler le bug WinAnsi
-  caractère par caractère au lieu de tâtonner.
-- **Piloter Railway en GraphQL direct** (`backboard.railway.com`, `Authorization: Bearer <token
-  workspace>`) : lister le projet pour récupérer les IDs env/service, puis **poller le déploiement
-  jusqu'à `SUCCESS`** et vérifier le `commitHash` déployé + un `GET /` en 200. Le token n'est pas
-  stocké (le redemander à Vincent).
-
-### Intégration Apimo + Tally (16/07/2026) — candidatures en ligne automatisées
-
-Pipeline complet livré et déployé : **Apimo (biens) → RETINA → lien Tally par bien → le candidat
-remplit et uploade → webhook → candidat créé + documents téléchargés + analyse automatique**.
-Le Google Sheets sort du circuit : les données Tally vivent dans le Postgres RETINA (et pourront
-être synchronisées vers Pipedrive demain — email/téléphone déjà stockés).
-
-- **Import Apimo** (`src/lib/apimo.ts` + `POST /api/apimo/sync` + bouton « Synchroniser Apimo » sur
-  l'accueil) : biens à la location uniquement (`category=2`, `status=1`). Mapping : loyer =
-  `price.value` (period 4 = mensuel), **charges = `price.fees`**, libellé = titre FR de l'annonce +
-  ville (l'API n'expose PAS l'adresse postale, `address` est null). Dédoublonnage par `apimo_id`
-  (upsert : critères ET adresse d'un bien existant conservés — l'adresse a pu être précisée à la
-  main —, seuls loyer/charges se rafraîchissent, avec recalcul des scores si le coût change — zéro
-  coût API). ⚠️ `price.fees` est
-  souvent vide côté Apimo alors que le bien a des charges (constaté sur APP025 : 0 vs 225 € encodés
-  par Shawna) → la synchro **ne met à jour les charges que si Apimo en fournit** (jamais d'écrasement
-  par un zéro). Un bien encodé à la main peut être **rattaché à sa fiche Apimo** via
-  `PATCH /api/biens/[id]` `{apimoId}` (fait pour le bien LANG-STREE ↔ APP025, doublon supprimé).
-  Un bien retiré d'Apimo n'est jamais supprimé. Identifiants : clé « Brouwers AI » (`APIMO_PROVIDER=4764`,
-  `APIMO_AGENCY=16579`, `APIMO_TOKEN` — doc Sprint 1 BBI Launchpad du Drive). ⚠️ Apimo n'expose que
-  les biens où le partenaire « Brouwers AI » est activé MANUELLEMENT sur la fiche (4 biens location
-  exposés au 16/07). Quota 1000 appels.
-- **Formulaire Tally unique** : `https://tally.so/r/ob1NPX` (compte vincent@korr.lu, créé via MCP
-  Tally). UN formulaire pour tous les biens, rattaché par **champs cachés `bien`** (id RETINA) et
-  **`adresse`** (affichée dans le texte d'accueil par mention) portés par l'URL — PAS un formulaire
-  par bien (zéro dérive, un seul webhook). **Refondu (16/07 soir) sur le modèle exact du
-  « Questionnaire candidat location » existant (`XxyprV`, celui qui alimentait le Google Sheets)** :
-  même branding (logo Brouwers, cover, bouton « Commencer »), mêmes pages — consentement RGPD
-  (case obligatoire), identité complète par candidat (nom, prénom, naissance, email, téléphone,
-  adresse postale ; section « second co-titulaire » en logique conditionnelle), situation
-  professionnelle et revenus déclarés (x2), projet locatif (motif, date d'entrée, durée, occupants,
-  animaux), « à propos » — PLUS la page « 05. Documents » : **upload multiple** (PDF/JPEG/PNG/WebP/
-  HEIC, 10 Mo max par fichier = plafond du plan Tally gratuit, 20 fichiers max) et CAPTCHA anti-spam.
-  ⚠️ create_blocks du MCP : max 10 groupes par appel. La page bien affiche le lien copiable (carte
-  « Candidature en ligne », construite depuis `TALLY_FORM_ID` côté serveur).
-- **Toutes les réponses du questionnaire sont archivées** dans `candidats.tally_answers` (JSONB,
-  libellé + valeur lisible, ids d'options résolus en texte) et affichées en carte « Réponses du
-  questionnaire » sur la fiche candidat — le Google Sheets est entièrement remplacé. Le webhook
-  apparie les personnes par les paires de questions « Nom »/« Prénom » (candidat principal puis
-  second co-titulaire) pour nommer le dossier.
-- **Webhook** (`POST /api/webhooks/tally`) : signature **HMAC-SHA256 base64 vérifiée**
-  (`TALLY_SIGNING_SECRET`, en-tête `tally-signature`) — sans secret configuré, tout est refusé.
-  **Idempotence** par `tally_submission_id` (index unique : Tally rejoue les webhooks en échec).
-  Crée le candidat (nom = les 2 noms joints par « et », email, téléphone, `source='tally'`),
-  télécharge les fichiers depuis le stockage Tally (URLs à token du payload), les insère en
-  `documents` (`type='auto'`, `personne='?'` → pipeline batch existant), puis lance
-  **`analyseCandidat()` en arrière-plan** (réponse à Tally < 10 s, timeout webhook Tally). Un bien
-  inconnu répond 200 (inutile que Tally rejoue). L'analyse est factorisée dans **`src/lib/analyse.ts`**
-  (partagée avec le bouton Analyser).
-- **Schéma** : `biens.apimo_id` (unique partiel), `candidats.email/telephone/source/
-  tally_submission_id` (unique partiel). HEIC accepté à l'upload Tally mais pas par l'API Anthropic :
-  le webhook l'ignore proprement (listé dans `ignores`), à convertir si ça devient fréquent.
-- **Config webhook côté Tally = MANUEL** (ni le MCP ni l'API publique sans clé ne le permettent) :
-  Tally → formulaire → Integrations → Webhooks → endpoint
-  `https://retina-production-6d72.up.railway.app/api/webhooks/tally` + signing secret = valeur de
-  `TALLY_SIGNING_SECRET` sur Railway. Fait une fois, vaut pour tous les biens.
-- **Variables Railway** posées sur `retina` : `TALLY_SIGNING_SECRET`, `TALLY_FORM_ID=ob1NPX`,
-  `APIMO_PROVIDER/TOKEN/AGENCY`. ⚠️ Piège : le **MCP Railway** (`railway-agent`) « stage » les
-  variables sans les appliquer — exiger ensuite un **commit des staged changes** (sinon le déploiement
-  suivant part sans). Vérifier avec un appel API qui lit la variable.
-- **RGPD** : la rétention auto des soumissions Tally (30 j) exige **Tally Business** — pas actif.
-  Les documents vivent donc EN DOUBLE (Tally + Postgres RETINA) tant qu'on n'efface pas les
-  soumissions Tally à la main (ou upgrade). RETINA reste la base de référence.
-- **Sécurité coût API** : CAPTCHA sur le formulaire + idempotence par soumission. Pas de plafond
-  d'analyses par bien pour l'instant.
-- ⚠️ Piège shell : `pkill -f "next start"` dans une commande Bash se tue lui-même (le motif matche
-  la ligne de commande du shell). Utiliser `pkill -f '[n]ext-server'`.
-- **Auth reportée** (décision Vincent 16/07) : à faire quand BBI passera sur Workspace. D'ici là,
-  l'app reste ouverte — ne pas diffuser l'URL RETINA au-delà de Shawna.
-
-### Retours Vincent (16/07/2026 soir) — lien court, devises étrangères, zip
-
-- **Lien court de candidature** (`/c/<id>`, redirection 302 vers Tally) : livré ce soir-là puis
-  **SUPPRIMÉ dans la foulée** (voir « Retours Vincent, suite » plus bas) — il exposait le domaine
-  RETINA aux candidats. La carte « Candidature en ligne » affiche l'URL Tally directe.
-- **Devises étrangères (bug réel remonté par Vincent : fiche de paie en MUR comptée en euros)** :
-  champ `devise` (code ISO, `{value, confiance}`) ajouté aux schémas bulletins/contrat/avis/bilans,
-  prompts explicites « montants TELS QUELS dans la devise du document, ne convertis JAMAIS en
-  euros ». La synthèse n'additionne que les montants EUR (devise absente = EUR, compat anciennes
-  extractions), signale les documents écartés dans `aVerifier` ET dans un contrôle de cohérence
-  dédié « Les montants du dossier sont en euros » (rouge, validable à la main). Jamais de conversion
-  (déterminisme). ⚠️ Les documents étrangers déjà extraits AVANT ce champ n'ont pas de devise →
-  comptés en EUR : utiliser « tout ré-extraire » sur les dossiers suspects.
-- **Zip des documents** : bouton « Télécharger tous les documents » sur la fiche candidat →
-  `GET /api/candidats/[id]/zip` (jszip, noms dédoublonnés, `dossier-<nom>.zip`). Permet à Shawna
-  d'archiver un dossier ailleurs d'un clic.
-- **Doublon Mondercange (question Vincent)** : déjà traité à la synchro initiale — le bien manuel de
-  Shawna (adresse postale + 225 € de charges conservées, 5 candidats) a été rattaché à APP025 via
-  `{apimoId}` et le doublon créé par l'import supprimé ; la synchro ne recrée rien (0 créés).
-
-### Retours Vincent (16/07/2026, suite) — Traité, analyse en fond, Basic Auth
-
-- **Bouton « Traité »** sur chaque candidat de la page bien (suivi de Shawna : appelé, mail envoyé...) :
-  colonne `candidats.traite` (bool), `PATCH /api/candidats/[id]` `{traite}`, toggle propre sous le nom
-  (« Non traité » pointillé → « ✓ Traité » vert, cliquable dans les deux sens). **Bascule optimiste**
-  (l'UI change immédiatement, la sauvegarde part en fond, retour arrière si échec) : pas de
-  rechargement de la liste, donc pas de lag. Aucun effet score.
-- **Analyse en arrière-plan** : `POST /api/candidats/[id]/analyze` répond immédiatement, statut
-  `analyse_en_cours` (garde anti-double-lancement), analyse détachée côté serveur (Railway = process
-  persistant). Pages candidat ET bien pollent (3-4 s) tant qu'une analyse tourne ; pastille ambre
-  « Analyse en cours… ». Le webhook Tally pose aussi ce statut. On peut quitter la page, l'analyse
-  continue et le score apparaît seul.
-- **Lien court /c/ SUPPRIMÉ, Basic Auth SUPPRIMÉE (décision Vincent, même soir)** : le lien court
-  exposait le domaine RETINA aux candidats (app ouverte). Première réponse = middleware Basic Auth,
-  mais Vincent a tranché : pas d'auth avant Workspace, le vrai souci était l'URL. Donc retour au
-  lien Tally DIRECT (`tally.so/r/<form>?bien=&adresse=`, long mais domaine neutre) sur la page bien,
-  route `/c/[id]` et `src/middleware.ts` supprimés, variables `RETINA_USER`/`RETINA_PASSWORD`
-  retirées de Railway. L'app reste ouverte : ne pas diffuser le domaine RETINA aux candidats.
-- **Cadratins** : les 2 derniers `—` de textes UI (hint documents + dropzone) remplacés par des virgules.
-
-### Retours Vincent (17/07/2026) — lot UI + 2 features (recommandabilité, relance mail)
-
-Livré et déployé. **UI** : marque RETINA en Poppins ExtraBold (auto-hébergée, `public/fonts/`),
-réglée à 48px après retour « trop gros » ; header de la page bien restructuré (`topbar--split` : marque
-+ boutons sur une ligne, **titre du bien sur sa propre ligne** en dessous, `.page-title-lg`) ; bouton
-export raccourci « Exporter » + icône PDF (hauteur identique aux autres, 38px) ; icône de synchro
-(tournante) sur « Synchroniser Apimo » ; cartes de la liste des biens réduites à **loyer + charges**
-(ratio retiré) ; **tag Apimo remplacé par le logo officiel** (`public/apimo-logo.svg`, wordmark teal
-`#223d46` assemblé depuis les vecteurs de marque `logo-a` + `logo-pimo` d'apimo.com, alignement calé
-visuellement) ; bouton « Traité » à gabarit ENTIÈREMENT figé (le décalage venait de l'alignement sur
-la ligne de base du texte : hauteur de ligne variable selon le check → bouton sorti du flux, flex,
-cases fixes) ; bascule optimiste (pas de rechargement).
-
-- **Bulletins « les 3 derniers »** (pas « récents ») : cohérence + complétude reformulées, la cohérence
-  exige désormais 3 bulletins consécutifs ET récents.
-- **Feature RECOMMANDABILITÉ (score discrétionnaire, séparé du /100)** : `src/lib/discretionnaire.ts`
-  compare les **préférences du bailleur** (nouveaux critères du bien : composition seul/couple, sans
-  animaux, longue durée — dans `Criteres`, `normalizeCriteres`, `BienForm` section « Préférences
-  discrétionnaires ») aux **réponses déclarées dans Tally** (`candidats.tally_answers`). `% = part des
-  préférences satisfaites`, `null` si aucune préférence active OU candidat sans questionnaire (encodé à
-  la main). Affiché : pastille `♥ %` sur la liste des candidats (`discr_pct` dans `GET biens/[id]`),
-  carte « Recommandabilité » détaillée sur la fiche candidat (`discretionnaire` dans `GET candidats/[id]`),
-  préférences listées sur la carte critères du bien. Testé : 100 % (3/3), 67 % (2/3), 33 % (1/3), null.
-- **Feature RELANCE MAIL** (`src/lib/mail.ts` + `POST /api/candidats/[id]/relance`) : bouton « Relancer
-  par mail pour compléter le dossier » sous la carte complétude (visible seulement si dossier incomplet
-  ET email présent). Liste les documents manquants (`buildCompletude`, items ≠ ok) et envoie un mail au
-  candidat via **Gmail SMTP BBI** (nodemailer, env `BBI_GMAIL_USER` / `BBI_GMAIL_APP_PASSWORD` /
-  `BBI_MAIL_FROM_NAME`). **Gated** : 503 propre si non configuré (comme la clé Anthropic). ⚠️ **À
-  brancher** : il faut un **mot de passe d'application Google** sur un compte BBI (2FA requise), posé
-  sur Railway, puis un test réel — non testé bout-en-bout faute d'identifiants.
-- **Tally** : texte d'accueil enrichi d'une prévention « À préparer dès maintenant » (pièce d'identité,
-  3 dernières fiches de salaire, contrat / ou docs indépendant), pour que les candidats aient les
-  fichiers prêts avant la page upload.
-- **Formulaire Tally bilingue (choix de langue au début)** : décision prise + tentative de build +
-  blocage tooling découvert, détaillés dans la section « Formulaire Tally bilingue » juste ci-dessous.
-
-### Formulaire Tally bilingue FR/EN (17/07/2026) — décision, build tenté, BLOQUÉ par un bug tooling
-
-**Décision Vincent** : **Option 1** — UN seul formulaire (`ob1NPX`), choix de langue au tout début,
-chaque bloc dupliqué FR/EN, un seul lien, un seul webhook. (Écarté : 2 formulaires séparés.) Vincent
-a validé « le formulaire est stable, on maintiendra les 2 langues ». Design retenu :
-
-- **Sélecteur de langue** en tête de page 1 (« Dans quelle langue... / In which language... » →
-  `Français` / `English`), avant l'intro.
-- **Deux blocs partagés (intro page 1, page de remerciement) gérés par visibilité conditionnelle**
-  selon la langue (JAMAIS les deux langues empilées — Vincent a explicitement refusé l'empilement :
-  une 1ʳᵉ tentative qui fusionnait FR+EN dans un même bloc d'intro a été rejetée).
-- **Pages EN jumelles** (consentement, identité, situation, projet, à propos, documents) placées
-  après les pages FR ; **saut de page par langue** : page 1 → si English, `JUMP TO` la 1ʳᵉ page EN ;
-  page documents FR → `JUMP TO` la page de remerciement (repositionnée en toute fin) pour sauter les
-  pages EN. Les pages EN répliquent EXACTEMENT la structure FR (champs secondaires cachés + 17 règles
-  de révélation `co-titulaire = Oui`), pattern éprouvé du FR.
-
-**⚠️ BLOCAGE MAJEUR — bug déterministe de `create_blocks` (MCP Tally)** : lors de la création de
-plusieurs **champs de saisie « nus »** (sans TITLE, label en placeholder — le style imposé par Vincent
-« nom du champ DANS le champ ») dans un même appel, l'API **abandonne silencieusement** certains blocs.
-Reproduit 3 fois (insertion au milieu ET append en fin) : la page identité perdait **12 blocs sur 26**
-à chaque fois — systématiquement les `INPUT_DATE`, `INPUT_EMAIL`, `INPUT_PHONE_NUMBER`, les options
-`MULTIPLE_CHOICE_OPTION` (Oui/Non) et les 2 premiers `INPUT_TEXT` après un heading (Nom/Prénom) ;
-survivaient Rue/Ville/Code postal/Pays. Les pages faites d'un TITLE + options (situation, projet,
-documents) se créaient parfaitement. **Diagnostic confirmé** : un `INPUT_EMAIL` nu créé SEUL passe
-sans problème → le bug ne touche que les **lots** de champs nus. **Contournement = créer ces champs
-UN PAR UN** (fastidieux : ~10 appels rien que pour l'identité, chacun renvoyant tout le ledger ~15k
-tokens).
-
-**État à la fin de la session** : build **NON terminé et NON sauvegardé**. Le formulaire de prod
-`ob1NPX` est **INTACT** (seul `save_form` persiste, jamais appelé — tout le brouillon bilingue vivait
-dans le working draft en mémoire, abandonné). La version FR live reste celle validée par Shawna.
-
-**Pour finir proprement (prochaine session)** — deux voies :
-1. **Dupliquer les pages FR dans l'UI Tally** (fonction « duplicate page » de l'app, qui clone les
-   champs de façon fiable, ce que l'API ne sait pas faire), puis traduire les libellés en EN. Le plus
-   sûr, mais manuel.
-2. **Reprendre le build API un champ à la fois** (contournement prouvé ci-dessus), avec un budget de
-   contexte dédié, puis câbler : sauts de langue + visibilité intro/remerciement + révélations EN +
-   `configure_blocks` file upload (multiple, 20 fichiers, 10 Mo, types PDF/JPEG/PNG/WebP/HEIC) +
-   `reposition_pages` (identité en slot 9, remerciement en dernier).
-- **Dans les deux cas**, étendre ensuite le **webhook** (`src/app/api/webhooks/tally/route.ts` :
-  `nomDossier`/`valeurLisible`/`reponses` matchent des libellés FR par regex → ajouter les libellés EN
-  « Last name »/« First name », options Yes/No, etc.) ET **`src/lib/discretionnaire.ts`** (matchers
-  composition/animaux/durée à étendre aux libellés + valeurs EN). Sans ça, une candidature en anglais
-  serait mal nommée / mal scorée en recommandabilité.
-
-### Formulaire Tally bilingue FR/EN (20/07/2026) — LIVRÉ + PUBLIÉ (voie 2, API un champ à la fois)
-
-Le formulaire bilingue est **terminé, vérifié au ledger et publié** sur `ob1NPX`
-(`https://tally.so/r/ob1NPX`, 274 blocs, 14 pages). Le parcours FR est identique à avant, seule
-l'étape « choix de langue » s'ajoute en tête. Webhook + `discretionnaire.ts` étendus à l'anglais
-(commit sur la branche de session).
-
-- **Structure** : page 1 = intro + **sélecteur de langue** (Français / English, requis) ; pages 2‑7
-  FR (consentement, identité, situation, projet, à propos, documents) ; pages 8‑13 EN (mêmes 6 pages
-  jumelles) ; page 14 = remerciement partagé. Les pages EN répliquent exactement le FR (champs du
-  2ᵉ co‑titulaire cachés + 16 règles de révélation, animaux → « précisez », upload multiple configuré).
-- **Visibilité conditionnelle (jamais 2 langues empilées)** : intro FR et intro EN toutes deux
-  `isHidden` par défaut + règle `SHOW` selon la langue ; idem pour les 2 blocs de remerciement (FR+EN)
-  qui cohabitent sur la page 14 mais ne s'affichent qu'un à la fois.
-- **Routage par sauts de page (LE piège)** : un `JUMP TO PAGE` créé via `apply_logic` **s'ancre sur la
-  page de la question de la condition**, PAS sur une page choisie. Donc :
-  - « langue IS English → JUMP page 8 » est sur la page 1 (la question langue y est) → OK, saute les
-    pages FR.
-  - « langue IS Français → JUMP page 14 » se serait AUSSI ancré page 1 → le candidat FR sautait tout le
-    formulaire dès la page 1. ❌ À la place, le saut FR est conditionné sur une question de la **page 7**
-    (le champ upload FR `c72214ff` **IS NOT EMPTY**, toujours vrai car requis) → il s'ancre page 7 et
-    saute les pages EN après les documents FR. Les candidats EN ne voient jamais la page 7 (ils ont
-    sauté en page 8), donc ce saut ne les touche pas.
-- **Méthode qui a marché** : création des blocs déléguée à un **sous‑agent** (isole les ~15‑25k tokens
-  de ledger renvoyés à chaque `create_blocks`), champs de saisie nus créés **un par un** (le bug de lot
-  n'a jamais frappé), puis reposition + `configure_blocks` (visibilité/optional/upload) + `apply_logic`
-  faits par l'agent principal en extrayant les uuids du ledger (`jq` sur le fichier de résultat).
-- ⚠️ **PIÈGE MAJEUR — le working draft Tally est en mémoire de session et se perd sur reconnexion MCP.**
-  Une première version complète a été **perdue** parce qu'on a attendu (question à Vincent) avant de
-  sauver, et le serveur MCP s'est reconnecté entre‑temps → `list_blocks` a renvoyé `{}` et `save_form`
-  « does not have any blocks ». La prod `ob1NPX` n'a jamais été touchée (rien de sauvé), mais tout le
-  build a dû être refait. **Leçon : dès que la structure est complète et vérifiée au ledger, appeler
-  `save_form` immédiatement** — ne pas laisser un brouillon non sauvé traverser une pause.
-- **Webhook** (`nomDossier`) apparie aussi `^(nom|last name)$` / `^(pr[ée]nom|first name)$`, et prend
-  le **1ᵉʳ email/téléphone NON vide** (les champs de la langue non choisie arrivent vides et pouvaient
-  masquer les vrais). `discretionnaire.ts` : matchers composition (`second co-tenant`, `Yes/No`),
-  animaux (`pets`, `No`), durée (`expected rental duration`, `2 and 5` / `more than 5` / `long term`).
-
-### Retours Vincent (22/07/2026) — suivi 4 états, export sélectif persistant, salaire CASH récurrent
-
-Livré + déployé (prod).
-
-- **Statuts de suivi (remplacent le bouton Traité/Non traité)** : 4 pastilles **Contacté** (mauve),
-  **Visite** (bleu), **Dossier déposé** (vert), **KO** (rouge). Tant qu'aucun n'est choisi, les 4 boutons
-  gris s'affichent côte à côte ; un clic replie l'affichage sur le **seul** statut choisi (coloré) — les
-  dossiers traités s'alignent, plus lisibles. **Recliquer la pastille désélectionne tout** (retour aux 4
-  gris) pour re-choisir. Colonne `candidats.suivi` (migration one-shot depuis `traite`), PATCH `{suivi}`,
-  bascule optimiste. Pastilles calées sur la boîte de `.ds-pill` (même hauteur que le tag « Analysé »).
-- **Export PDF sélectif + persistant** : une case à cocher par candidat (toutes cochées par défaut),
-  l'export ne génère que les cochés. État **persisté** en base (`candidats.exclu_export`, PATCH
-  `{excluExport}`) — survit au refresh/retour. ⚠️ La case vit DANS `ds-row__main` : l'ajouter comme 3ᵉ
-  enfant direct de `.ds-row` (`justify-content:space-between`) recentrait le nom (bug corrigé).
-- **Salaire salarié = CASH RÉCURRENT, pas le « Net » gonflé (LE point important)** : un bulletin peut
-  gonfler la ligne « Net » avec des éléments qui ne sont pas du salaire récurrent versé. RETINA prenait
-  la ligne « Net » → surestimation. Cas réel **Lourenco** (Carrousel SA) : RETINA lisait **6 850 €** alors
-  que le cash récurrent réel est **~4 111 €** (+50 % → faux positif, score 95). Deux distorsions :
-  1. **Avance sur bonus 2 500 €/mois** dans le brut = avance remboursable, **pas du salaire**.
-  2. **Avantage en nature voiture 945 €** ajouté au brut pour être taxé puis **retenu** (jamais viré) ;
-     RETINA prenait « Net » (6 824) au lieu de « **A payer** » (5 855, le vrai virement).
-  - **Extraction enrichie** (`SCHEMA_PAIE` + prompt) : `net_a_payer` (le virement réel), `avantage_en_nature`,
-    `elements_non_recurrents` (+ détail). Règle Vincent : **on retient le CASH** ; on exclut bonus/avance
-    (pas stable) ET tout le non-cash (avantage nature, allocations/frais).
-  - **Synthèse** (`recurCash`) : salaire retenu = `net_a_payer` **au prorata de la part récurrente du
-    brut de cash** = `net_a_payer × (brut − avantage − non_récurrents)/(brut − avantage)`. Repli prudent
-    (soustraction directe) si brut illisible. Note « à vérifier » + `net_a_payer_moyen`/`exclusions`.
-  - **Rétrocompatible** : sans les nouveaux champs (anciennes extractions), on retombe sur l'ancien calcul
-    → **les dossiers existants doivent être ré-analysés** (`force:true`) pour bénéficier de la correction.
-  - **Vérifié sur le vrai dossier Lourenco (prod, `force:true`)** : salaire retenu **4 111 €** (au lieu de
-    6 851), net à payer moyen 5 897, exclusions affichées « avance sur bonus 2 500 €/mois » + « avantage en
-    nature 946 €/mois ». Le score reste élevé (94) : le ratio était déjà confortablement au-dessus du seuil,
-    donc un salaire honnête de 4 111 € couvre encore le loyer — le but était un **salaire vrai**, pas un
-    score plus bas.
-
-- **⚠️ BUG LATENT CORRIGÉ — réextraction forcée d'un document « dossier » (400 API).** Découvert en
-  déclenchant `force:true` sur Lourenco : les 4 documents tombaient tous en `erreur_document` avec
-  `400 messages.0.content.1.text.text: Field required`. **Ce n'était PAS le changement de salaire**
-  (reverté puis re-appliqué : erreur identique sans lui). Cause racine : un fichier uploadé en batch est
-  extrait par `extractDocumentAuto` puis **stocké `type='dossier'`**. À la réanalyse **forcée**,
-  `analyse.ts` routait par `if (type==='auto'||type==='autre')` → un `'dossier'` retombait dans la branche
-  **typée** `extractDocument('dossier')`, pour laquelle **il n'existe ni `PROMPTS['dossier']` ni
-  `SCHEMAS['dossier']`** (undefined) → le bloc texte partait sans champ `text`. Latent car l'analyse
-  **normale** saute les documents déjà `done` ; seul `force:true` (ou un ré-run) le déclenchait.
-  **Fix** (`analyse.ts`) : seuls les types LEGACY rattachés à la main (`fiche_paie`/`contrat`/
-  `piece_identite`) passent par l'extraction typée ; **`auto`, `autre` ET `dossier`** repassent par
-  `extractDocumentAuto` (qui redétecte le contenu). **Leçon durable** : un « champ requis manquant » côté
-  API sur un bloc texte = un **prompt `undefined`** en amont (clé de map inexistante), pas un problème de
-  forme de requête ni de version SDK — le corps sérialisé était prouvé correct en local.
-
-**Reste à faire / SPRINT 2 (ouvert par Vincent le 03/07/2026)** :
-1. **Employeur dominant** (constat dossier LANG-STREE) : afficher l'employeur le plus fréquent des
-   bulletins (et signaler « plusieurs employeurs ») au lieu du premier trouvé. Cosmétique, sûr.
-2. **Salarié sans contrat de travail** : ne plus mettre 0 de stabilité quand `type_contrat=null` mais
-   qu'il y a des fiches de paie récurrentes → stabilité « salarié, contrat non fourni » (~15/30) + note
-   « contrat manquant ». À valider avec Shawna (barème).
-3. **Calibration élargie** de l'extraction dossier + profil indépendant sur d'autres vrais dossiers du
-   Drive (avis d'imposition / bilan / KBIS) ; valider le barème indépendant (décote 20 %, ancienneté
-   2 ans, revenu = moyenne 2 ans) et le barème général avec Shawna.
-4. Éventuel plafonnement de la résolution des scans (levier coût, si le volume grimpe).
-5. **(16/07)** Synchronisation des candidats vers **Pipedrive** (email/téléphone déjà en base) ;
-   **envoi automatique du lien Tally** aux candidats entrants (via Make, comme le parcours achat) ;
-   **authentification RETINA** quand BBI passe sur Google Workspace ; **cron de synchro Apimo**
-   (aujourd'hui bouton manuel) ; conversion HEIC si des candidats en envoient beaucoup.
-6. ~~**(17/07)** Terminer le formulaire Tally bilingue~~ → **FAIT le 20/07** (voie 2, un champ à la
-   fois), publié sur `ob1NPX`, webhook + `discretionnaire.ts` étendus à l'anglais. Cf. section
-   « Formulaire Tally bilingue FR/EN (20/07/2026) — LIVRÉ + PUBLIÉ ».
-
-## Conventions pour Claude Code
-
-- Développer sur la branche désignée de la session ; ne jamais pousser ailleurs.
-- L'UI copie SCOUT/VESPER — en cas d'hésitation visuelle, aller lire leur code.
-- Aucun score ni champ ne doit être produit par le modèle en texte libre :
-  extraction = structured outputs, score = code.
-- Ne jamais committer de documents réels de candidats ni de clé API.
-- **`npm run build` passe avant tout commit.** Commit clair en français, puis push branche + `main`
-  (Railway auto-déploie), puis **poller le déploiement jusqu'à `SUCCESS`** avant de rendre la main.
-- **Vérifier les rendus, ne pas deviner** : captures Playwright sur le vrai `globals.css` (desktop +
-  mobile) pour l'UI, génération + rastérisation pour le PDF (cf. §Méthode de test). Les bugs
-  d'affichage remontés par Vincent venaient tous de suppositions non vérifiées.
-- **Critères d'un bien** : le modèle de données a évolué (interrupteur `actif` + `éliminatoire` par
-  critère). Toujours passer par **`normalizeCriteres()`** en lecture/persistance/scoring ; la
-  description « §Scoring » plus haut (`cdiRequis`, etc.) est l'ancien modèle, conservé pour l'histoire
-  mais **remappé** par `normalizeCriteres`.
-- Ces pièges (WinAnsi jsPDF, spécificité CSS, grille d'alignement, méthode de test, pilotage Railway
-  GraphQL) sont **transférables à SCOUT et VESPER** : même stack, même `globals.css`, même export
-  jsPDF. Les y appliquer quand on y touche.
+| `.claude/rules/extraction.md` | appels Claude, schémas, prompts, analyse (`extract.ts`, `schemas.ts`, `analyse.ts`) |
+| `.claude/rules/scoring.md` | synthèse, cohérence, scoring, recommandabilité, types |
+| `.claude/rules/export-pdf.md` | jsPDF, WinAnsi, `exportBien.ts` |
+| `.claude/rules/ui.md` | pages, composants, `globals.css`, vérification visuelle |
+| `.claude/rules/api.md` | routes API, webhook Tally, Apimo, mail |
+| `.claude/rules/db.md` | schéma Postgres (`db.ts`) |
+| skill `railway` | hébergement, variables, déploiement, données de prod |
+| skill `tally` | formulaire de candidature, pièges du MCP Tally |
+| `docs/contexte/` | produit et architecture, pièges et méthode de test, anciennes conventions |
+| `docs/decisions.md` | arbitrages datés |
+| `docs/feuille-de-route.md` | à faire, prochaine étape |
+| `docs/journal/` | une entrée par session, jamais chargée |
+
+## 8. Où on en est (22/09/2026)
+
+- En prod depuis juillet : extraction dossier, indépendants, Apimo, Tally bilingue, suivi 4 états,
+  export sélectif, salaire cash récurrent. Dernier lot : 22/07/2026.
+- Workflow korr installé le 22/09/2026 (agents, procédures, portiques, CI, 13 tests ciblés).
+- Ouvert : employeur dominant, salarié sans contrat, calibration sur d'autres vrais dossiers, relance
+  mail à brancher (mot de passe d'application Google), auth quand BBI passe sur Workspace.
